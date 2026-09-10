@@ -375,6 +375,18 @@
                                 <label>Break Time (Minutes)</label>
                                 <input type="number" id="breakMinutes" class="form-control" placeholder="60" min="0" onchange="saveSettings()">
                             </div>
+                            <div class="form-group">
+                                <label>Grace Period (Minutes)</label>
+                                <input type="number" id="graceMinutes" class="form-control" placeholder="10" min="0" onchange="saveSettings()">
+                                <small class="text-muted">Minutes after Standard Time In with no late penalty (e.g. 10 = late rules start applying at 08:11)</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Sunday Rule</label>
+                                <div class="checkbox-label">
+                                    <input type="checkbox" id="sundayAllOT" onchange="saveSettings()">
+                                    <span>Treat all Sunday hours as Overtime (no late/regular pay on Sundays)</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -686,6 +698,7 @@
                         <option value="late">Late</option>
                         <option value="absent">Absent</option>
                         <option value="half_day">Half Day</option>
+                        <option value="rest_day">Rest Day / OT</option>
                     </select>
                 </div>
             </div>
@@ -696,73 +709,45 @@
         </div>
     </div>
 
-    <!-- Bulk DTR Paste Modal -->
+    <!-- Paste DTR Data Modal (grid: employees x days, matching monthly DTR sheet) -->
     <div class="modal hidden" id="bulkDtrModal">
         <div class="modal-overlay" onclick="closeModal('bulkDtrModal')"></div>
-        <div class="modal-content bulk-dtr-modal">
+        <div class="modal-content paste-dtr-modal">
             <div class="modal-header">
-                <h3><i class="fas fa-paste"></i> Bulk DTR Entry</h3>
+                <h3>Paste DTR Data</h3>
                 <button class="btn-close" onclick="closeModal('bulkDtrModal')">&times;</button>
             </div>
             <div class="modal-body">
-                <!-- Employee Selector at Top -->
-                <div class="bulk-dtr-employee-selector">
-                    <label for="bulkDtrEmployeeSelect">Employee</label>
-                    <div class="employee-select-wrapper">
-                        <select id="bulkDtrEmployeeSelect" class="form-control" onchange="onBulkDtrEmployeeChange()">
-                            <option value="">Select an employee...</option>
-                        </select>
-                        <button class="btn btn-sm btn-outline" onclick="resetBulkDtrEmployee()" title="Clear selection" style="margin-top: 24px;">
-                            <i class="fas fa-times"></i> Clear
-                        </button>
-                    </div>
-                    <small class="text-muted">Select one employee, then add multiple date entries below</small>
+                <div class="paste-dtr-month-row">
+                    <label for="pasteDtrMonth">Month:</label>
+                    <select id="pasteDtrMonth" class="form-control" onchange="changePasteDtrMonth()"></select>
                 </div>
 
-                <div class="bulk-dtr-toolbar">
-                    <div class="bulk-dtr-hint">
-                        <i class="fas fa-info-circle"></i>
-                        <span id="bulkDtrHintText">Select an employee first, then add date entries or paste data.</span>
-                    </div>
-                    <div class="bulk-dtr-actions">
-                        <button class="btn btn-sm btn-primary" onclick="addBulkDtrRow()" id="addBulkDtrRowBtn" disabled>
-                            <i class="fas fa-plus"></i> Add Date Entry
-                        </button>
-                        <button class="btn btn-sm btn-outline" onclick="clearBulkDtrRows()">
-                            <i class="fas fa-eraser"></i> Clear All Entries
-                        </button>
-                    </div>
+                <p class="paste-dtr-instructions">
+                    Enter employee names and time in/out for each day, or paste rows copied from Excel / Google Sheets. Format: HH:MM (e.g., 08:00, 17:00)
+                </p>
+                <div class="paste-dtr-rules" id="pasteDtrRulesText"></div>
+
+                <div class="paste-dtr-tabs">
+                    <button type="button" class="paste-dtr-tab active" id="pasteDtrTabFirst" onclick="switchPasteDtrTab('first')">Days 1-15</button>
+                    <button type="button" class="paste-dtr-tab" id="pasteDtrTabSecond" onclick="switchPasteDtrTab('second')">Days 16-31</button>
                 </div>
 
-                <div class="table-responsive bulk-dtr-table-wrap">
-                    <table class="table bulk-dtr-table" id="bulkDtrTable">
-                        <thead>
-                            <tr>
-                                <th style="width: 40px;">#</th>
-                                <th>Date</th>
-                                <th>Time In</th>
-                                <th>Time Out</th>
-                                <th>OT Hours</th>
-                                <th>Late (min)</th>
-                                <th>Status</th>
-                                <th style="width: 40px;"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="bulkDtrTableBody"></tbody>
-                    </table>
+                <div class="table-responsive paste-dtr-grid-wrap">
+                    <table class="table paste-dtr-table" id="pasteDtrTable"></table>
                 </div>
 
-                <div class="bulk-dtr-paste-area" id="bulkDtrPasteAreaContainer" style="display: none;">
-                    <label>Or paste spreadsheet data for the selected employee</label>
-                    <textarea id="bulkDtrPasteArea" class="form-control" rows="3" placeholder="Paste rows copied from Excel / Google Sheets (Date, Time In, Time Out, OT Hours, Late Minutes, Status)&#10;Example:&#10;2026-09-01	08:00	17:00	0	0	Present&#10;2026-09-02	08:15	17:00	0	15	Late"></textarea>
-                    <small class="text-muted">Columns: Date, Time In, Time Out, OT Hours, Late Minutes, Status. Tab or comma separated. Employee column is not needed - uses selected employee above.</small>
-                </div>
+                <button class="btn btn-sm btn-outline paste-dtr-add-row" onclick="addPasteDtrRow()">
+                    <i class="fas fa-plus"></i> Add Employee Row
+                </button>
+
+                <datalist id="pasteDtrEmployeesList"></datalist>
             </div>
             <div class="modal-footer">
-                <span class="text-muted" id="bulkDtrRowCount">0 entries ready to save</span>
+                <span class="text-muted" id="pasteDtrRowCount">0 employees, 0 day entries ready to import</span>
                 <button class="btn btn-secondary" onclick="closeModal('bulkDtrModal')">Cancel</button>
-                <button class="btn btn-primary" onclick="saveBulkDTR()" id="saveBulkDtrBtn" disabled>
-                    <i class="fas fa-save"></i> Save All Entries
+                <button class="btn btn-primary" onclick="importPasteDtrAttendance()" id="importPasteDtrBtn">
+                    <i class="fas fa-file-import"></i> Import Attendance
                 </button>
             </div>
         </div>
