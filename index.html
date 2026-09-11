@@ -195,8 +195,8 @@
                             <button class="btn btn-primary btn-sm" onclick="showDTRAddModal()">
                                 <i class="fas fa-plus"></i> Manual Entry
                             </button>
-                            <button class="btn btn-outline btn-sm" onclick="showBulkDTRModal()">
-                                <i class="fas fa-paste"></i> Bulk Paste
+                            <button class="btn btn-outline btn-sm" onclick="showPasteDTRModal()">
+                                <i class="fas fa-paste"></i> Paste DTR Data
                             </button>
                         </div>
                     </div>
@@ -364,27 +364,71 @@
                                 </div>
                             </div>
                             <div class="form-group">
-                                <label>Standard Time In</label>
-                                <input type="time" id="standardTimeIn" class="form-control" onchange="saveSettings()">
-                            </div>
-                            <div class="form-group">
-                                <label>Standard Time Out</label>
-                                <input type="time" id="standardTimeOut" class="form-control" onchange="saveSettings()">
-                            </div>
-                            <div class="form-group">
                                 <label>Break Time (Minutes)</label>
                                 <input type="number" id="breakMinutes" class="form-control" placeholder="60" min="0" onchange="saveSettings()">
+                                <small class="text-muted">Used for manual single-entry DTR. The Paste DTR grid auto-deducts the AM/PM gap below.</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-business-time"></i> Schedule & Attendance Rules</h3>
+                        </div>
+                        <div class="card-body">
+                            <label>Work Schedule (AM / PM)</label>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="text-muted">AM Time In</label>
+                                    <input type="time" id="scheduleAmIn" class="form-control" onchange="saveSettings()">
+                                </div>
+                                <div class="form-group">
+                                    <label class="text-muted">AM Time Out</label>
+                                    <input type="time" id="scheduleAmOut" class="form-control" onchange="saveSettings()">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="text-muted">PM Time In</label>
+                                    <input type="time" id="schedulePmIn" class="form-control" onchange="saveSettings()">
+                                </div>
+                                <div class="form-group">
+                                    <label class="text-muted">PM Time Out</label>
+                                    <input type="time" id="schedulePmOut" class="form-control" onchange="saveSettings()">
+                                </div>
+                            </div>
+                            <small class="text-muted">OT is anything worked beyond PM Time Out. Lunch (AM Out → PM In) is auto-deducted from worked hours.</small>
+
+                            <label style="margin-top: 16px; display: block;">Late Rule Tiers (minutes late from AM Time In)</label>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="text-muted">Grace ends at (min)</label>
+                                    <input type="number" id="lateGraceEnd" class="form-control" min="0" onchange="saveSettings()">
+                                </div>
+                                <div class="form-group">
+                                    <label class="text-muted">Per-minute tier ends at (min)</label>
+                                    <input type="number" id="latePerMinuteEnd" class="form-control" min="0" onchange="saveSettings()">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="text-muted">1hr deduction tier ends at (min)</label>
+                                    <input type="number" id="lateFlat1hrEnd" class="form-control" min="0" onchange="saveSettings()">
+                                </div>
+                                <div class="form-group">
+                                    <label class="text-muted">2hr deduction tier ends at (min)</label>
+                                    <input type="number" id="lateFlat2hrEnd" class="form-control" min="0" onchange="saveSettings()">
+                                </div>
                             </div>
                             <div class="form-group">
-                                <label>Grace Period (Minutes)</label>
-                                <input type="number" id="graceMinutes" class="form-control" placeholder="10" min="0" onchange="saveSettings()">
-                                <small class="text-muted">Minutes after Standard Time In with no late penalty (e.g. 10 = late rules start applying at 08:11)</small>
+                                <label class="text-muted">Half-day tier ends at (min)</label>
+                                <input type="number" id="lateHalfDayEnd" class="form-control" min="0" onchange="saveSettings()">
+                                <small class="text-muted">Beyond this many minutes late, the day is marked Absent.</small>
                             </div>
                             <div class="form-group">
-                                <label>Sunday Rule</label>
                                 <div class="checkbox-label">
                                     <input type="checkbox" id="sundayAllOT" onchange="saveSettings()">
-                                    <span>Treat all Sunday hours as Overtime (no late/regular pay on Sundays)</span>
+                                    <span>Sunday = all hours worked at OT rate (late rules don't apply)</span>
                                 </div>
                             </div>
                         </div>
@@ -698,7 +742,6 @@
                         <option value="late">Late</option>
                         <option value="absent">Absent</option>
                         <option value="half_day">Half Day</option>
-                        <option value="rest_day">Rest Day / OT</option>
                     </select>
                 </div>
             </div>
@@ -709,7 +752,7 @@
         </div>
     </div>
 
-    <!-- Paste DTR Data Modal (grid: employees x days, matching monthly DTR sheet) -->
+    <!-- Paste DTR Data Modal -->
     <div class="modal hidden" id="bulkDtrModal">
         <div class="modal-overlay" onclick="closeModal('bulkDtrModal')"></div>
         <div class="modal-content paste-dtr-modal">
@@ -720,33 +763,35 @@
             <div class="modal-body">
                 <div class="paste-dtr-month-row">
                     <label for="pasteDtrMonth">Month:</label>
-                    <select id="pasteDtrMonth" class="form-control" onchange="changePasteDtrMonth()"></select>
+                    <select id="pasteDtrMonth" class="form-control" onchange="onPasteDtrMonthChange()"></select>
                 </div>
 
-                <p class="paste-dtr-instructions">
-                    Enter employee names and time in/out for each day, or paste rows copied from Excel / Google Sheets. Format: HH:MM (e.g., 08:00, 17:00)
-                </p>
-                <div class="paste-dtr-rules" id="pasteDtrRulesText"></div>
+                <div class="paste-dtr-rules-hint" id="pasteDtrRulesHint"></div>
 
-                <div class="paste-dtr-tabs">
-                    <button type="button" class="paste-dtr-tab active" id="pasteDtrTabFirst" onclick="switchPasteDtrTab('first')">Days 1-15</button>
-                    <button type="button" class="paste-dtr-tab" id="pasteDtrTabSecond" onclick="switchPasteDtrTab('second')">Days 16-31</button>
+                <div class="paste-dtr-tabs" id="pasteDtrTabs"></div>
+
+                <div class="table-responsive paste-dtr-table-wrap">
+                    <table class="table paste-dtr-table" id="pasteDtrTable">
+                        <thead id="pasteDtrTableHead"></thead>
+                        <tbody id="pasteDtrTableBody"></tbody>
+                    </table>
                 </div>
 
-                <div class="table-responsive paste-dtr-grid-wrap">
-                    <table class="table paste-dtr-table" id="pasteDtrTable"></table>
+                <datalist id="pasteDtrEmployeeList"></datalist>
+
+                <div class="paste-dtr-toolbar">
+                    <button class="btn btn-sm btn-outline" onclick="addPasteDtrEmployeeRow('')">
+                        <i class="fas fa-plus"></i> Add Employee Row
+                    </button>
+                    <button class="btn btn-sm btn-outline" onclick="clearPasteDtrGrid()">
+                        <i class="fas fa-eraser"></i> Clear Grid
+                    </button>
+                    <small class="text-muted">Tip: you can paste a whole block copied from Excel/Sheets (names down one column, In/Out times across) directly into any cell.</small>
                 </div>
-
-                <button class="btn btn-sm btn-outline paste-dtr-add-row" onclick="addPasteDtrRow()">
-                    <i class="fas fa-plus"></i> Add Employee Row
-                </button>
-
-                <datalist id="pasteDtrEmployeesList"></datalist>
             </div>
             <div class="modal-footer">
-                <span class="text-muted" id="pasteDtrRowCount">0 employees, 0 day entries ready to import</span>
                 <button class="btn btn-secondary" onclick="closeModal('bulkDtrModal')">Cancel</button>
-                <button class="btn btn-primary" onclick="importPasteDtrAttendance()" id="importPasteDtrBtn">
+                <button class="btn btn-primary" onclick="importPasteDtrAttendance()">
                     <i class="fas fa-file-import"></i> Import Attendance
                 </button>
             </div>
