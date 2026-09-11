@@ -1173,9 +1173,9 @@ body {
     background: var(--gray-400);
 }
 
-/* Paste DTR Data Modal (grid: employees x days) */
+/* Paste DTR Data Modal (multi-employee monthly grid) */
 .paste-dtr-modal {
-    max-width: 1200px;
+    max-width: 1400px;
     width: 96%;
 }
 
@@ -1187,8 +1187,8 @@ body {
 }
 
 .paste-dtr-month-row label {
-    font-weight: 600;
-    color: var(--gray-800);
+    font-weight: 500;
+    color: var(--gray-700);
     white-space: nowrap;
 }
 
@@ -1196,52 +1196,50 @@ body {
     max-width: 220px;
 }
 
-.paste-dtr-instructions {
-    font-size: 13px;
-    color: var(--gray-600);
-    margin: 0 0 6px;
-}
-
-.paste-dtr-rules {
+.paste-dtr-rules-hint {
     font-size: 12.5px;
+    line-height: 1.6;
     color: var(--gray-600);
-    background: #fffbeb;
-    border: 1px solid #fde68a;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
     border-radius: var(--radius);
-    padding: 8px 12px;
+    padding: 10px 12px;
     margin-bottom: 14px;
-    line-height: 1.7;
 }
 
-.paste-dtr-rules strong {
+.paste-dtr-rules-hint strong {
     color: var(--gray-800);
 }
 
 .paste-dtr-tabs {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     margin-bottom: 10px;
 }
 
 .paste-dtr-tab {
-    padding: 8px 16px;
-    border: 1px solid var(--gray-300);
-    background: var(--gray-50);
+    border: none;
+    background: var(--gray-100);
     color: var(--gray-700);
-    border-radius: var(--radius) var(--radius) 0 0;
-    cursor: pointer;
+    padding: 8px 16px;
+    border-radius: var(--radius);
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.paste-dtr-tab:hover {
+    background: var(--gray-200);
 }
 
 .paste-dtr-tab.active {
     background: var(--gray-900);
-    color: #fff;
-    border-color: var(--gray-900);
+    color: white;
 }
 
-.paste-dtr-grid-wrap {
-    max-height: 420px;
+.paste-dtr-table-wrap {
+    max-height: 460px;
     overflow: auto;
     border: 1px solid var(--gray-200);
     border-radius: var(--radius);
@@ -1255,10 +1253,8 @@ body {
 
 .paste-dtr-table th,
 .paste-dtr-table td {
-    border: 1px solid var(--gray-200);
-    padding: 4px;
-    text-align: center;
-    vertical-align: middle;
+    border-right: 1px solid var(--gray-100);
+    border-bottom: 1px solid var(--gray-100);
 }
 
 .paste-dtr-table thead th {
@@ -1266,87 +1262,93 @@ body {
     top: 0;
     z-index: 2;
     background: var(--gray-50);
-    font-size: 11px;
+    font-size: 11.5px;
+    font-weight: 600;
     color: var(--gray-700);
-    padding: 6px 4px;
+    padding: 8px 6px;
+    text-align: center;
+    white-space: nowrap;
 }
 
-.paste-dtr-table thead .paste-dtr-day-sun {
-    background: #fef3c7;
-}
-
-.paste-dtr-table thead .paste-dtr-day-sub {
+.paste-dtr-table thead th small {
+    display: block;
     font-weight: 400;
-    color: var(--gray-500);
-    font-size: 10px;
+    color: var(--gray-400);
+    text-transform: none;
 }
 
-.paste-dtr-table th.paste-dtr-emp-col,
-.paste-dtr-table td.paste-dtr-emp-col {
+.paste-dtr-emp-col {
     position: sticky;
     left: 0;
-    z-index: 1;
-    background: #fff;
-    text-align: left;
-    min-width: 170px;
-    max-width: 170px;
-}
-
-.paste-dtr-table thead th.paste-dtr-emp-col {
     z-index: 3;
     background: var(--gray-50);
+    min-width: 180px;
+    text-align: left !important;
 }
 
-.paste-dtr-table td.paste-dtr-day-sun {
-    background: #fffbeb;
+td.paste-dtr-emp-col {
+    background: white;
+    z-index: 1;
 }
 
-.paste-dtr-table .paste-dtr-name-input {
+.paste-dtr-day-col.paste-dtr-sunday {
+    background: #fff7ed;
+}
+
+.paste-dtr-day-cell {
+    padding: 4px 6px;
+    min-width: 92px;
+}
+
+.paste-dtr-day-cell.paste-dtr-hidden,
+.paste-dtr-day-col.paste-dtr-hidden {
+    display: none;
+}
+
+td.paste-dtr-day-cell {
+    background: white;
+}
+
+.paste-dtr-day-cell input[type="time"] {
+    display: block;
     width: 100%;
+    padding: 4px 6px;
+    font-size: 12px;
+    margin-bottom: 3px;
+    min-width: 0;
+}
+
+.paste-dtr-day-cell input[type="time"]:last-child {
+    margin-bottom: 0;
+}
+
+.paste-dtr-weekday {
+    color: var(--gray-400);
+    font-weight: 400;
+}
+
+.paste-dtr-del-col {
+    width: 36px;
+    text-align: center;
+}
+
+.paste-dtr-emp-col input {
     padding: 6px 8px;
     font-size: 13px;
-    border: 1px solid transparent;
-    background: transparent;
 }
 
-.paste-dtr-table .paste-dtr-name-input:focus {
-    border-color: var(--primary);
-    background: #fff;
+.paste-dtr-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    flex-wrap: wrap;
 }
 
-.paste-dtr-table .paste-dtr-name-input.unmatched {
-    border-color: var(--danger);
-    background: #fef2f2;
-}
-
-.paste-dtr-table .paste-dtr-time-input {
-    width: 62px;
-    padding: 3px 2px;
-    font-size: 11px;
-    border: 1px solid var(--gray-200);
-    border-radius: 4px;
-    text-align: center;
-    margin: 1px 0;
-}
-
-.paste-dtr-table .paste-dtr-time-input:focus {
-    border-color: var(--primary);
-}
-
-.paste-dtr-table .paste-dtr-day-cell {
-    padding: 3px;
-}
-
-.paste-dtr-table .paste-dtr-remove-row {
-    color: var(--danger);
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 4px;
-}
-
-.paste-dtr-add-row {
-    margin-top: 10px;
+.paste-dtr-toolbar small {
+    color: var(--gray-500);
+    flex: 1;
+    min-width: 220px;
 }
 
 /* Toggle switch look for checkbox in settings */
