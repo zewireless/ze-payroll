@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Attendance - Scan In/Out</title>
+<link rel="icon" href="data:,">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<style>
+    :root {
+        --primary: #2563eb;
+        --primary-dark: #1d4ed8;
+        --success: #10b981;
+        --danger: #ef4444;
+        --gray-50: #f8fafc;
+        --gray-200: #e2e8f0;
+        --gray-400: #94a3b8;
+        --gray-600: #475569;
+        --gray-800: #1e293b;
+        --gray-900: #0f172a;
+        --radius: 12px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(180deg, var(--gray-900) 0%, var(--gray-800) 100%);
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+    .card {
+        width: 100%;
+        max-width: 360px;
+        background: white;
+        border-radius: 20px;
+        padding: 32px 24px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.35);
+        text-align: center;
+    }
+    .avatar {
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        background: var(--primary);
+        color: white;
+        font-size: 28px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 16px;
+    }
+    h1 { font-size: 20px; color: var(--gray-900); margin-bottom: 4px; }
+    .sub { color: var(--gray-600); font-size: 14px; margin-bottom: 24px; }
+    .pin-dots {
+        display: flex;
+        justify-content: center;
+        gap: 14px;
+        margin-bottom: 24px;
+    }
+    .pin-dot {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 2px solid var(--gray-400);
+        transition: background 0.15s, border-color 0.15s, transform 0.15s;
+    }
+    .pin-dot.filled { background: var(--primary); border-color: var(--primary); transform: scale(1.1); }
+    .pin-dot.shake { animation: shake 0.4s; }
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        20% { transform: translateX(-6px); }
+        40% { transform: translateX(6px); }
+        60% { transform: translateX(-6px); }
+        80% { transform: translateX(6px); }
+    }
+    .keypad {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+    }
+    .key {
+        font-size: 22px;
+        font-weight: 600;
+        color: var(--gray-900);
+        background: var(--gray-50);
+        border: 1px solid var(--gray-200);
+        border-radius: var(--radius);
+        padding: 18px 0;
+        cursor: pointer;
+        user-select: none;
+        transition: background 0.1s;
+    }
+    .key:active { background: var(--gray-200); }
+    .key.action { color: var(--gray-600); font-size: 15px; }
+    .status-msg {
+        margin-top: 18px;
+        font-size: 13px;
+        color: var(--danger);
+        min-height: 18px;
+    }
+    .center-msg { padding: 30px 0; }
+    .center-msg i { font-size: 48px; }
+    .result-icon {
+        width: 64px; height: 64px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 16px; font-size: 30px; color: white;
+    }
+    .result-icon.success { background: var(--success); }
+    .result-icon.error { background: var(--danger); }
+    .result-title { font-size: 19px; font-weight: 700; color: var(--gray-900); margin-bottom: 6px; }
+    .result-sub { color: var(--gray-600); font-size: 14px; margin-bottom: 22px; }
+    .btn {
+        display: inline-block;
+        border: none;
+        background: var(--primary);
+        color: white;
+        font-size: 15px;
+        font-weight: 600;
+        padding: 12px 28px;
+        border-radius: var(--radius);
+        cursor: pointer;
+    }
+    .btn:active { background: var(--primary-dark); }
+    .spinner {
+        width: 34px; height: 34px; border-radius: 50%;
+        border: 3px solid var(--gray-200); border-top-color: var(--primary);
+        margin: 0 auto 16px;
+        animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+    <div id="loadingView" class="center-msg">
+        <div class="spinner"></div>
+        <div class="sub">Loading...</div>
+    </div>
+</div>
+
+<script>
+// ============================================
+// Attendance kiosk - one employee's own QR + own phone.
+// URL format: scan.html?emp=EMP-2026-001
+// ============================================
+
+const params = new URLSearchParams(window.location.search);
+const employeeId = params.get('emp');
+
+let supabaseClient = null;
+if (window.supabase && typeof SUPABASE_URL !== 'undefined' && SUPABASE_URL && !SUPABASE_URL.includes('YOUR-PROJECT')) {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+let pin = '';
+let submitting = false;
+let employeeName = '';
+
+function initials(name) {
+    return name.split(' ').filter(Boolean).map(p => p[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function renderError(title, sub) {
+    document.getElementById('card').innerHTML = `
+        <div class="result-icon error">!</div>
+        <div class="result-title">${title}</div>
+        <div class="result-sub">${sub}</div>
+    `;
+}
+
+function renderPinPad() {
+    document.getElementById('card').innerHTML = `
+        <div class="avatar">${initials(employeeName)}</div>
+        <h1>Hi, ${employeeName}!</h1>
+        <div class="sub">Enter your 4-digit PIN to log your time</div>
+        <div class="pin-dots" id="pinDots">
+            ${[0, 1, 2, 3].map(() => '<div class="pin-dot"></div>').join('')}
+        </div>
+        <div class="keypad" id="keypad">
+            ${[1,2,3,4,5,6,7,8,9].map(n => `<div class="key" data-key="${n}">${n}</div>`).join('')}
+            <div class="key action" data-key="clear">Clear</div>
+            <div class="key" data-key="0">0</div>
+            <div class="key action" data-key="back">&larr;</div>
+        </div>
+        <div class="status-msg" id="statusMsg"></div>
+    `;
+    document.getElementById('keypad').addEventListener('click', onKeyPress);
+    updateDots();
+}
+
+function updateDots(shake) {
+    const dots = document.querySelectorAll('.pin-dot');
+    dots.forEach((dot, i) => {
+        dot.classList.toggle('filled', i < pin.length);
+        dot.classList.toggle('shake', !!shake);
+    });
+    if (shake) setTimeout(() => dots.forEach(d => d.classList.remove('shake')), 400);
+}
+
+function onKeyPress(e) {
+    const key = e.target.closest('.key')?.dataset.key;
+    if (!key || submitting) return;
+
+    if (key === 'clear') {
+        pin = '';
+        setStatus('');
+        updateDots();
+        return;
+    }
+    if (key === 'back') {
+        pin = pin.slice(0, -1);
+        updateDots();
+        return;
+    }
+    if (pin.length >= 4) return;
+    pin += key;
+    updateDots();
+    if (pin.length === 4) {
+        submitPunch();
+    }
+}
+
+function setStatus(msg) {
+    const el = document.getElementById('statusMsg');
+    if (el) el.textContent = msg;
+}
+
+async function submitPunch() {
+    submitting = true;
+    setStatus('Checking...');
+
+    const { data, error } = await supabaseClient.rpc('record_attendance_punch', {
+        p_employee_id: employeeId,
+        p_pin: pin
+    });
+
+    submitting = false;
+
+    if (error) {
+        pin = '';
+        updateDots(true);
+        setStatus('Something went wrong. Please try again.');
+        return;
+    }
+
+    if (!data.success) {
+        pin = '';
+        updateDots(true);
+        setStatus(data.message || 'Incorrect PIN.');
+        return;
+    }
+
+    renderResult(data);
+}
+
+function renderResult(data) {
+    const isIn = data.action === 'time_in';
+    document.getElementById('card').innerHTML = `
+        <div class="result-icon success">${isIn ? '&#8594;' : '&#8592;'}</div>
+        <div class="result-title">${isIn ? 'Time In Recorded' : 'Time Out Recorded'}</div>
+        <div class="result-sub">${data.employee_name} &middot; ${data.time}</div>
+        <div class="sub" style="margin-bottom:0;">You can close this page now.</div>
+    `;
+}
+
+async function init() {
+    if (!supabaseClient) {
+        renderError('Not Configured', 'This scan page has not been connected to the attendance system yet. Please contact your administrator.');
+        return;
+    }
+    if (!employeeId) {
+        renderError('QR Code Not Recognized', 'Please scan your personal attendance QR code, or contact your administrator.');
+        return;
+    }
+
+    const { data, error } = await supabaseClient
+        .from('employees_kiosk_view')
+        .select('first_name, last_name, status')
+        .eq('id', employeeId)
+        .maybeSingle();
+
+    if (error || !data) {
+        renderError('Employee Not Found', 'This QR code is not recognized. Please contact your administrator.');
+        return;
+    }
+    if (data.status !== 'active') {
+        renderError('Account Inactive', 'This employee account is not currently active. Please contact your administrator.');
+        return;
+    }
+
+    employeeName = `${data.first_name} ${data.last_name}`;
+    renderPinPad();
+}
+
+init();
+</script>
+</body>
+</html>

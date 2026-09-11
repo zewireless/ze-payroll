@@ -690,6 +690,11 @@
                         <option value="on_leave">On Leave</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Attendance Kiosk PIN</label>
+                    <input type="text" id="employeePin" class="form-control" placeholder="4-digit PIN, e.g. 1234" maxlength="4" inputmode="numeric" pattern="[0-9]{4}">
+                    <small class="text-muted" id="employeePinHint">Used when this employee scans their attendance QR code on their own phone. Leave blank to keep unchanged.</small>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('employeeModal')">Cancel</button>
@@ -833,12 +838,12 @@
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>Username</label>
-                    <input type="text" id="loginUsername" class="form-control" placeholder="Enter username" value="admin">
+                    <label>Email</label>
+                    <input type="email" id="loginUsername" class="form-control" placeholder="you@company.com" autocomplete="username">
                 </div>
                 <div class="form-group">
                     <label>Password</label>
-                    <input type="password" id="loginPassword" class="form-control" placeholder="Enter password" value="admin123">
+                    <input type="password" id="loginPassword" class="form-control" placeholder="Enter password" autocomplete="current-password">
                 </div>
                 <div class="form-group">
                     <label class="checkbox-label">
@@ -848,16 +853,18 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-primary" style="width: 100%; justify-content: center;" onclick="handleLogin()">
+                <button class="btn btn-primary" id="loginSubmitBtn" style="width: 100%; justify-content: center;" onclick="handleLogin()">
                     <i class="fas fa-sign-in-alt"></i> Sign In
                 </button>
             </div>
             <div style="padding: 16px 20px; border-top: 1px solid var(--gray-200); text-align: center; font-size: 12px; color: var(--gray-500);">
-                Demo: admin / admin123
+                Sign in with the admin account you created in Supabase Auth.
             </div>
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

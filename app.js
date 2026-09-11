@@ -2,48 +2,84 @@
 // Payroll Management System - JavaScript
 // ============================================
 
+// ------------------------------------------------
+// Supabase client
+// employees & dtr_entries live in Supabase (see supabase/migrations)
+// so an employee's own phone (kiosk scan) and the admin dashboard
+// both read/write the same data, live. Everything else (settings,
+// payroll run history) still lives in localStorage for now.
+// ------------------------------------------------
+const supabaseClient = (window.supabase && typeof SUPABASE_URL !== 'undefined' && SUPABASE_URL && !SUPABASE_URL.includes('YOUR-PROJECT'))
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    : null;
+
+function requireSupabase() {
+    if (!supabaseClient) {
+        showToast('Not connected to Supabase - copy supabase-config.example.js to supabase-config.js and fill in your project details.', 'error');
+        return false;
+    }
+    return true;
+}
+
 // Check authentication on load
-function checkAuth() {
-    const isLoggedIn = sessionStorage.getItem('payroll_logged_in') === 'true';
-    const rememberMe = localStorage.getItem('payroll_remember_me') === 'true';
+async function checkAuth() {
+    if (!requireSupabase()) {
+        document.getElementById('loginModal').classList.remove('hidden');
+        return;
+    }
+    const { data: { session } } = await supabaseClient.auth.getSession();
     const savedUser = localStorage.getItem('payroll_username');
 
-    if (isLoggedIn || rememberMe) {
+    if (session) {
         document.getElementById('loginModal').classList.add('hidden');
-        if (savedUser) {
-            document.getElementById('loginUsername').value = savedUser;
-            document.getElementById('rememberMe').checked = true;
-        }
+        if (savedUser) document.getElementById('loginUsername').value = savedUser;
         initializeApp();
     } else {
         document.getElementById('loginModal').classList.remove('hidden');
     }
+
+    // Keep the app in sync if the session expires or the admin logs
+    // out in another tab.
+    supabaseClient.auth.onAuthStateChange((event) => {
+        if (event === 'SIGNED_OUT') {
+            document.getElementById('loginModal').classList.remove('hidden');
+        }
+    });
 }
 
-function handleLogin() {
-    const username = document.getElementById('loginUsername').value.trim();
+async function handleLogin() {
+    if (!requireSupabase()) return;
+
+    const email = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value;
     const rememberMe = document.getElementById('rememberMe').checked;
 
-    // Demo credentials: admin / admin123
-    if (username === 'admin' && password === 'admin123') {
-        sessionStorage.setItem('payroll_logged_in', 'true');
-        if (rememberMe) {
-            localStorage.setItem('payroll_remember_me', 'true');
-            localStorage.setItem('payroll_username', username);
-        } else {
-            localStorage.removeItem('payroll_remember_me');
-            localStorage.removeItem('payroll_username');
-        }
-        document.getElementById('loginModal').classList.add('hidden');
-        initializeApp();
-    } else {
-        showToast('Invalid username or password!', 'error');
+    const loginBtn = document.getElementById('loginSubmitBtn');
+    if (loginBtn) { loginBtn.disabled = true; loginBtn.textContent = 'Signing in...'; }
+
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+    if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = 'Login'; }
+
+    if (error) {
+        showToast(error.message || 'Invalid email or password!', 'error');
+        return;
     }
+
+    if (rememberMe) {
+        localStorage.setItem('payroll_remember_me', 'true');
+        localStorage.setItem('payroll_username', email);
+    } else {
+        localStorage.removeItem('payroll_remember_me');
+        localStorage.removeItem('payroll_username');
+    }
+    document.getElementById('loginModal').classList.add('hidden');
+    initializeApp();
 }
 
-function logout() {
-    sessionStorage.removeItem('payroll_logged_in');
+async function logout() {
+    if (supabaseClient) await supabaseClient.auth.signOut();
+    teardownRealtimeSync();
     document.getElementById('loginModal').classList.remove('hidden');
 }
 
@@ -55,19 +91,52 @@ function toggleSidebar() {
 }
 
 // Initialize App
-function initializeApp() {
+async function initializeApp() {
     loadSettings();
-    loadEmployees();
-    loadDTR();
+    await loadEmployees();
+    await loadDTR();
     loadPayroll();
     updateDashboard();
     document.getElementById('dtrDateFilter').valueAsDate = new Date();
     document.getElementById('payrollMonthFilter').value = new Date().toISOString().slice(0, 7);
     document.getElementById('reportMonth').value = new Date().toISOString().slice(0, 7);
     initializeQRScanner();
+    setupRealtimeSync();
 }
 
 document.addEventListener('DOMContentLoaded', checkAuth);
+
+// ------------------------------------------------
+// Realtime sync - lets a kiosk scan (or another admin device) show up
+// on this dashboard immediately, without a manual refresh.
+// ------------------------------------------------
+let realtimeChannels = [];
+
+function setupRealtimeSync() {
+    if (!supabaseClient || realtimeChannels.length > 0) return;
+
+    const dtrChannel = supabaseClient
+        .channel('dtr-entries-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'dtr_entries' }, () => {
+            loadDTR();
+            updateDashboard();
+        })
+        .subscribe();
+
+    const employeeChannel = supabaseClient
+        .channel('employees-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => {
+            loadEmployees();
+        })
+        .subscribe();
+
+    realtimeChannels = [dtrChannel, employeeChannel];
+}
+
+function teardownRealtimeSync() {
+    realtimeChannels.forEach(ch => supabaseClient?.removeChannel(ch));
+    realtimeChannels = [];
+}
 
 // ============================================
 // Data Storage
@@ -304,91 +373,83 @@ function removeLateRange(index) {
 // Employee Functions
 // ============================================
 
-function loadEmployees() {
-    const stored = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
-    if (stored) {
-        employees = JSON.parse(stored);
-    } else {
-        // Only seed sample data if there's nothing in localStorage at all
-        seedSampleData();
+// --- DB <-> app object mapping (DB uses snake_case; the rest of the
+// app was built around these camelCase field names, so we translate
+// here and leave every render/payroll function untouched) ---
+function mapEmployeeFromDb(row) {
+    return {
+        id: row.id,
+        firstName: row.first_name || '',
+        middleName: row.middle_name || '',
+        lastName: row.last_name || '',
+        position: row.position || '',
+        department: row.department || '',
+        email: row.email || '',
+        phone: row.phone || '',
+        address: row.address || '',
+        dailyRate: row.daily_rate || 0,
+        hourlyRate: row.hourly_rate || 0,
+        baseDailyPay: row.base_daily_pay || 0,
+        hireDate: row.hire_date || '',
+        sssNumber: row.sss_number || '',
+        philhealthNumber: row.philhealth_number || '',
+        pagibigNumber: row.pagibig_number || '',
+        tin: row.tin || '',
+        status: row.status || 'active',
+        hasPin: !!row.pin_hash,
+        createdAt: row.created_at
+    };
+}
+
+function mapEmployeeToDb(emp) {
+    return {
+        id: emp.id,
+        first_name: emp.firstName,
+        middle_name: emp.middleName,
+        last_name: emp.lastName,
+        position: emp.position,
+        department: emp.department,
+        email: emp.email,
+        phone: emp.phone,
+        address: emp.address,
+        daily_rate: emp.dailyRate,
+        hourly_rate: emp.hourlyRate,
+        base_daily_pay: emp.baseDailyPay,
+        hire_date: emp.hireDate || null,
+        sss_number: emp.sssNumber,
+        philhealth_number: emp.philhealthNumber,
+        pagibig_number: emp.pagibigNumber,
+        tin: emp.tin,
+        status: emp.status
+    };
+}
+
+async function loadEmployees() {
+    if (!requireSupabase()) return;
+
+    const { data, error } = await supabaseClient
+        .from('employees')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+    if (error) {
+        showToast('Failed to load employees: ' + error.message, 'error');
+        return;
     }
+
+    employees = (data || []).map(mapEmployeeFromDb);
     renderEmployeeTable();
     updateEmployeeFilters();
 }
 
-function seedSampleData() {
-    employees = [
-        {
-            id: generateEmployeeId(),
-            firstName: 'Juan',
-            lastName: 'Dela Cruz',
-            middleName: '',
-            position: 'Software Engineer',
-            department: 'Engineering',
-            email: 'juan.delacruz@company.com',
-            phone: '+63 912 345 6789',
-            address: '123 Main St, Manila',
-            dailyRate: 800,
-            hourlyRate: 100,
-            baseDailyPay: 500,
-            sssNumber: '12-3456789-0',
-            philhealthNumber: '123456789012',
-            pagibigNumber: '1234-5678-9012',
-            tin: '123-456-789-000',
-            hireDate: '2023-01-15',
-            status: 'active',
-            createdAt: new Date().toISOString()
-        },
-        {
-            id: generateEmployeeId(),
-            firstName: 'Maria',
-            lastName: 'Santos',
-            middleName: 'Lopez',
-            position: 'HR Manager',
-            department: 'Human Resources',
-            email: 'maria.santos@company.com',
-            phone: '+63 917 234 5678',
-            address: '456 Oak Ave, Quezon City',
-            dailyRate: 900,
-            hourlyRate: 112.50,
-            baseDailyPay: 500,
-            sssNumber: '12-4567890-1',
-            philhealthNumber: '234567890123',
-            pagibigNumber: '2345-6789-0123',
-            tin: '234-567-890-000',
-            hireDate: '2022-06-01',
-            status: 'active',
-            createdAt: new Date().toISOString()
-        },
-        {
-            id: generateEmployeeId(),
-            firstName: 'Pedro',
-            lastName: 'Reyes',
-            middleName: '',
-            position: 'Accountant',
-            department: 'Finance',
-            email: 'pedro.reyes@company.com',
-            phone: '+63 918 345 6789',
-            address: '789 Pine Rd, Makati',
-            dailyRate: 700,
-            hourlyRate: 87.50,
-            baseDailyPay: 500,
-            sssNumber: '12-5678901-2',
-            philhealthNumber: '345678901234',
-            pagibigNumber: '3456-7890-1234',
-            tin: '345-678-901-000',
-            hireDate: '2023-03-10',
-            status: 'active',
-            createdAt: new Date().toISOString()
-        }
-    ];
-    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
-}
-
-function generateEmployeeId() {
-    const count = employees.length + 1;
-    const year = new Date().getFullYear();
-    return `EMP-${year}-${String(count).padStart(3, '0')}`;
+async function generateEmployeeId() {
+    if (!requireSupabase()) return null;
+    const { data, error } = await supabaseClient.rpc('generate_employee_id');
+    if (error) {
+        showToast('Failed to generate employee ID: ' + error.message, 'error');
+        return null;
+    }
+    return data;
 }
 
 function renderEmployeeTable() {
@@ -420,7 +481,10 @@ function renderEmployeeTable() {
             <td>${emp.position}</td>
             <td>₱${formatNumber(emp.dailyRate || 0)}</td>
             <td>₱${formatNumber(emp.hourlyRate || 0)}</td>
-            <td><span class="badge ${statusClass}">${capitalize(emp.status)}</span></td>
+            <td>
+                <span class="badge ${statusClass}">${capitalize(emp.status)}</span>
+                ${!emp.hasPin ? '<br><small style="color: var(--danger);" title="Set a PIN so this employee can use the attendance kiosk"><i class="fas fa-exclamation-triangle"></i> No PIN</small>' : ''}
+            </td>
             <td class="actions">
                 <button class="btn-icon" onclick="editEmployee('${emp.id}')" title="Edit">
                     <i class="fas fa-pen"></i>
@@ -471,9 +535,9 @@ function updateEmployeeFilters() {
     }
 }
 
-function addEmployee() {
+async function addEmployee() {
     document.getElementById('editEmployeeId').value = '';
-    document.getElementById('employeeId').value = generateEmployeeId();
+    document.getElementById('employeeId').value = 'Generating...';
     document.getElementById('firstName').value = '';
     document.getElementById('middleName').value = '';
     document.getElementById('lastName').value = '';
@@ -491,7 +555,12 @@ function addEmployee() {
     document.getElementById('pagibigNumber').value = '';
     document.getElementById('tin').value = '';
     document.getElementById('employeeStatus').value = 'active';
+    document.getElementById('employeePin').value = '';
+    document.getElementById('employeePinHint').textContent = 'Used when this employee scans their attendance QR code on their own phone.';
     showModal('employeeModal');
+
+    const newId = await generateEmployeeId();
+    document.getElementById('employeeId').value = newId || '';
 }
 
 function editEmployee(id) {
@@ -517,10 +586,16 @@ function editEmployee(id) {
     document.getElementById('pagibigNumber').value = emp.pagibigNumber || '';
     document.getElementById('tin').value = emp.tin || '';
     document.getElementById('employeeStatus').value = emp.status || 'active';
+    document.getElementById('employeePin').value = '';
+    document.getElementById('employeePinHint').textContent = emp.hasPin
+        ? 'A PIN is already set. Leave blank to keep it, or enter 4 digits to change it.'
+        : 'No PIN set yet - this employee cannot use the attendance kiosk until one is set.';
     showModal('employeeModal');
 }
 
-function saveEmployee() {
+async function saveEmployee() {
+    if (!requireSupabase()) return;
+
     const editId = document.getElementById('editEmployeeId').value;
     const firstName = document.getElementById('firstName').value.trim();
     const middleName = document.getElementById('middleName').value.trim();
@@ -539,6 +614,7 @@ function saveEmployee() {
     const pagibigNumber = document.getElementById('pagibigNumber').value.trim();
     const tin = document.getElementById('tin').value.trim();
     const status = document.getElementById('employeeStatus').value;
+    const pin = document.getElementById('employeePin').value.trim();
 
     if (!firstName || !lastName) {
         showToast('First name and last name are required!', 'error');
@@ -548,76 +624,57 @@ function saveEmployee() {
         showToast('Position is required!', 'error');
         return;
     }
-
-    if (editId) {
-        // Update existing
-        const idx = employees.findIndex(e => e.id === editId);
-        if (idx !== -1) {
-            employees[idx] = {
-                ...employees[idx],
-                firstName,
-                middleName,
-                lastName,
-                position,
-                department,
-                email,
-                phone,
-                address,
-                dailyRate,
-                hourlyRate,
-                baseDailyPay,
-                hireDate,
-                sssNumber,
-                philhealthNumber,
-                pagibigNumber,
-                tin,
-                status
-            };
-            showToast('Employee updated successfully!', 'success');
-        }
-    } else {
-        // Add new
-        const newEmployee = {
-            id: document.getElementById('employeeId').value,
-            firstName,
-            middleName,
-            lastName,
-            position,
-            department,
-            email,
-            phone,
-            address,
-            dailyRate,
-            hourlyRate,
-            baseDailyPay,
-            hireDate,
-            sssNumber,
-            philhealthNumber,
-            pagibigNumber,
-            tin,
-            status,
-            createdAt: new Date().toISOString()
-        };
-        employees.push(newEmployee);
-        showToast('Employee added successfully!', 'success');
-    }
-
-    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
-    closeModal('employeeModal');
-    loadEmployees();
-    updateDashboard();
-}
-
-function deleteEmployee(id) {
-    if (!confirm('Are you sure you want to delete this employee? All their DTR records will also be deleted.')) {
+    if (pin && !/^\d{4}$/.test(pin)) {
+        showToast('PIN must be exactly 4 digits.', 'error');
         return;
     }
 
-    employees = employees.filter(e => e.id !== id);
-    dtrEntries = dtrEntries.filter(d => d.employeeId !== id);
-    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
-    localStorage.setItem(STORAGE_KEYS.DTR, JSON.stringify(dtrEntries));
-    loadEmployees();
+    const employeeId = editId || document.getElementById('employeeId').value;
+    const employeeObj = {
+        id: employeeId, firstName, middleName, lastName, position, department,
+        email, phone, address, dailyRate, hourlyRate, baseDailyPay, hireDate,
+        sssNumber, philhealthNumber, pagibigNumber, tin, status
+    };
+
+    const { error } = await supabaseClient
+        .from('employees')
+        .upsert(mapEmployeeToDb(employeeObj), { onConflict: 'id' });
+
+    if (error) {
+        showToast('Failed to save employee: ' + error.message, 'error');
+        return;
+    }
+
+    if (pin) {
+        const { error: pinError } = await supabaseClient.rpc('set_employee_pin', {
+            p_employee_id: employeeId,
+            p_pin: pin
+        });
+        if (pinError) {
+            showToast('Employee saved, but the PIN could not be set: ' + pinError.message, 'error');
+        }
+    }
+
+    showToast(editId ? 'Employee updated successfully!' : 'Employee added successfully!', 'success');
+    closeModal('employeeModal');
+    await loadEmployees();
+    updateDashboard();
+}
+
+async function deleteEmployee(id) {
+    if (!confirm('Are you sure you want to delete this employee? All their DTR records will also be deleted.')) {
+        return;
+    }
+    if (!requireSupabase()) return;
+
+    const { error } = await supabaseClient.from('employees').delete().eq('id', id);
+    if (error) {
+        showToast('Failed to delete employee: ' + error.message, 'error');
+        return;
+    }
+
+    await loadEmployees();
+    await loadDTR();
     updateDashboard();
     showToast('Employee deleted successfully!', 'info');
 }
@@ -637,9 +694,36 @@ function viewQREmployee(id) {
 // DTR Functions
 // ============================================
 
-function loadDTR() {
-    const stored = localStorage.getItem(STORAGE_KEYS.DTR);
-    dtrEntries = stored ? JSON.parse(stored) : [];
+function mapDtrFromDb(row) {
+    return {
+        id: row.id,
+        employeeId: row.employee_id,
+        date: row.date,
+        timeIn: row.time_in ? row.time_in.slice(0, 5) : '',
+        timeOut: row.time_out ? row.time_out.slice(0, 5) : '',
+        totalHours: row.total_hours || 0,
+        otHours: row.ot_hours || 0,
+        lateMinutes: row.late_minutes || 0,
+        status: row.status || 'present',
+        source: row.source || 'manual',
+        createdAt: row.created_at
+    };
+}
+
+async function loadDTR() {
+    if (!requireSupabase()) return;
+
+    const { data, error } = await supabaseClient
+        .from('dtr_entries')
+        .select('*')
+        .order('date', { ascending: false });
+
+    if (error) {
+        showToast('Failed to load DTR entries: ' + error.message, 'error');
+        return;
+    }
+
+    dtrEntries = (data || []).map(mapDtrFromDb);
 
     const employeeFilter = document.getElementById('dtrEmployeeFilter')?.value;
     const dateFilter = document.getElementById('dtrDateFilter')?.value;
@@ -718,7 +802,9 @@ function showDTRAddModal() {
     showModal('dtrModal');
 }
 
-function saveDTR() {
+async function saveDTR() {
+    if (!requireSupabase()) return;
+
     const employeeId = document.getElementById('dtrEmployee').value;
     const date = document.getElementById('dtrDate').value;
     const timeIn = document.getElementById('dtrTimeIn').value;
@@ -743,46 +829,34 @@ function saveDTR() {
     const calculatedLate = calculateLateMinutes(timeIn);
     const finalLateMinutes = lateMinutes || calculatedLate;
 
-    if (editId) {
-        // Update existing
-        const idx = dtrEntries.findIndex(d => d.id === editId);
-        if (idx !== -1) {
-            dtrEntries[idx] = {
-                ...dtrEntries[idx],
-                employeeId,
-                date,
-                timeIn,
-                timeOut,
-                totalHours,
-                otHours,
-                lateMinutes: finalLateMinutes,
-                status
-            };
-            showToast('DTR entry updated!', 'success');
-        }
-        // Clear edit ID
-        delete document.getElementById('dtrEmployee').dataset.editId;
-    } else {
-        // Add new
-        const dtrEntry = {
-            id: 'DTR-' + Date.now(),
-            employeeId,
-            date,
-            timeIn,
-            timeOut,
-            totalHours,
-            otHours,
-            lateMinutes: finalLateMinutes,
-            status,
-            createdAt: new Date().toISOString()
-        };
-        dtrEntries.push(dtrEntry);
-        showToast('DTR entry saved!', 'success');
+    const row = {
+        employee_id: employeeId,
+        date,
+        time_in: timeIn || null,
+        time_out: timeOut || null,
+        total_hours: totalHours,
+        ot_hours: otHours,
+        late_minutes: finalLateMinutes,
+        status,
+        source: 'manual'
+    };
+
+    // A DTR entry's real identity is (employee, date) - upsert on that
+    // so re-saving the same day (whether editing or adding) never
+    // collides with an entry that came from a kiosk scan or paste import.
+    const { error } = await supabaseClient
+        .from('dtr_entries')
+        .upsert(row, { onConflict: 'employee_id,date' });
+
+    if (error) {
+        showToast('Failed to save DTR entry: ' + error.message, 'error');
+        return;
     }
 
-    localStorage.setItem(STORAGE_KEYS.DTR, JSON.stringify(dtrEntries));
+    showToast(editId ? 'DTR entry updated!' : 'DTR entry saved!', 'success');
+    delete document.getElementById('dtrEmployee').dataset.editId;
     closeModal('dtrModal');
-    loadDTR();
+    await loadDTR();
     updateDashboard();
 }
 
@@ -805,14 +879,19 @@ function editDTR(id) {
     showModal('dtrModal');
 }
 
-function deleteDTR(id) {
+async function deleteDTR(id) {
     if (!confirm('Are you sure you want to delete this DTR entry?')) {
         return;
     }
+    if (!requireSupabase()) return;
 
-    dtrEntries = dtrEntries.filter(d => d.id !== id);
-    localStorage.setItem(STORAGE_KEYS.DTR, JSON.stringify(dtrEntries));
-    loadDTR();
+    const { error } = await supabaseClient.from('dtr_entries').delete().eq('id', id);
+    if (error) {
+        showToast('Failed to delete DTR entry: ' + error.message, 'error');
+        return;
+    }
+
+    await loadDTR();
     updateDashboard();
     showToast('DTR entry deleted!', 'info');
 }
@@ -1108,36 +1187,37 @@ function handlePasteDtrGridPaste(e) {
 
 // --- Import into DTR records ---
 
-function createEmployeeFromPasteName(rawName) {
+async function createEmployeeFromPasteName(rawName) {
     const parts = rawName.trim().replace(/\s+/g, ' ').split(' ');
     const firstName = parts.shift() || rawName;
     const lastName = parts.join(' ') || '-';
+    const id = await generateEmployeeId();
+    if (!id) return null;
+
     const newEmployee = {
-        id: generateEmployeeId(),
-        firstName,
-        middleName: '',
-        lastName,
+        id, firstName, middleName: '', lastName,
         position: settings.defaultPosition || 'Employee',
-        department: '',
-        email: '',
-        phone: '',
-        address: '',
+        department: '', email: '', phone: '', address: '',
         dailyRate: settings.defaultDailyRate || 400.00,
         hourlyRate: settings.defaultHourlyRate || 50.00,
         baseDailyPay: settings.baseDailyPay || 500.00,
         hireDate: new Date().toISOString().split('T')[0],
-        sssNumber: '',
-        philhealthNumber: '',
-        pagibigNumber: '',
-        tin: '',
-        status: 'active',
-        createdAt: new Date().toISOString()
+        sssNumber: '', philhealthNumber: '', pagibigNumber: '', tin: '',
+        status: 'active'
     };
+
+    const { error } = await supabaseClient.from('employees').insert(mapEmployeeToDb(newEmployee));
+    if (error) {
+        showToast(`Could not create employee "${rawName}": ${error.message}`, 'error');
+        return null;
+    }
     employees.push(newEmployee);
     return newEmployee;
 }
 
-function importPasteDtrAttendance() {
+async function importPasteDtrAttendance() {
+    if (!requireSupabase()) return;
+
     const monthValue = getPasteDtrMonthValue();
     if (!monthValue) {
         showToast('Select a month first.', 'error');
@@ -1149,17 +1229,18 @@ function importPasteDtrAttendance() {
 
     const rows = [...document.querySelectorAll('#pasteDtrTableBody tr')];
     let newEmployees = 0;
-    let importedEntries = 0;
     let skippedIncomplete = 0;
+    const rowsToUpsert = [];
 
-    rows.forEach(row => {
+    for (const row of rows) {
         const nameInput = row.querySelector('.paste-dtr-name-input');
         const rawName = (nameInput?.value || '').trim();
-        if (!rawName) return; // skip blank rows entirely
+        if (!rawName) continue; // skip blank rows entirely
 
         let employee = matchEmployeeByName(rawName);
         if (!employee) {
-            employee = createEmployeeFromPasteName(rawName);
+            employee = await createEmployeeFromPasteName(rawName);
+            if (!employee) continue; // creation failed, already toasted
             newEmployees++;
         }
 
@@ -1178,39 +1259,38 @@ function importPasteDtrAttendance() {
             const result = computeDtrForDay(timeIn, timeOut, dateStr);
             if (!result) return;
 
-            const existingIdx = dtrEntries.findIndex(d => d.employeeId === employee.id && d.date === dateStr);
-            const entry = {
-                id: existingIdx !== -1 ? dtrEntries[existingIdx].id : 'DTR-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
-                employeeId: employee.id,
+            rowsToUpsert.push({
+                employee_id: employee.id,
                 date: dateStr,
-                timeIn,
-                timeOut,
-                totalHours: result.totalHours,
-                otHours: result.otHours,
-                lateMinutes: result.lateMinutes,
+                time_in: timeIn,
+                time_out: timeOut,
+                total_hours: result.totalHours,
+                ot_hours: result.otHours,
+                late_minutes: result.lateMinutes,
                 status: result.status,
-                createdAt: existingIdx !== -1 ? dtrEntries[existingIdx].createdAt : new Date().toISOString()
-            };
-
-            if (existingIdx !== -1) {
-                dtrEntries[existingIdx] = entry;
-            } else {
-                dtrEntries.push(entry);
-            }
-            importedEntries++;
+                source: 'paste_import'
+            });
         });
-    });
+    }
 
-    if (importedEntries === 0) {
+    if (rowsToUpsert.length === 0) {
         showToast('No complete Time In / Time Out pairs found to import.', 'error');
         return;
     }
 
-    localStorage.setItem(STORAGE_KEYS.DTR, JSON.stringify(dtrEntries));
-    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
+    const { error } = await supabaseClient
+        .from('dtr_entries')
+        .upsert(rowsToUpsert, { onConflict: 'employee_id,date' });
+
+    if (error) {
+        showToast('Import failed: ' + error.message, 'error');
+        return;
+    }
+
+    const importedEntries = rowsToUpsert.length;
     closeModal('bulkDtrModal');
-    loadDTR();
-    loadEmployees();
+    await loadDTR();
+    await loadEmployees();
     updateDashboard();
 
     const summary = [`${importedEntries} day${importedEntries === 1 ? '' : 's'} imported`];
@@ -2105,9 +2185,17 @@ function handleQRCode(data) {
     // Stop scanner after successful scan
     stopQRScanner();
 
-    // Expected format: "EMPLOYEE_ID" or "payroll://EMP-ID"
+    // Expected format: a scan.html?emp=EMP-ID URL (current QR codes), the
+    // legacy "payroll://EMP-ID" scheme (older printed sheets), or a bare ID.
     let employeeId = data;
-    if (data.startsWith('payroll://')) {
+    if (data.includes('emp=')) {
+        try {
+            employeeId = new URL(data).searchParams.get('emp') || data;
+        } catch {
+            const match = data.match(/emp=([^&]+)/);
+            employeeId = match ? decodeURIComponent(match[1]) : data;
+        }
+    } else if (data.startsWith('payroll://')) {
         employeeId = data.replace('payroll://', '');
     }
 
@@ -2125,7 +2213,9 @@ function handleQRCode(data) {
     processQRScan(employee);
 }
 
-function processQRScan(employee) {
+async function processQRScan(employee) {
+    if (!requireSupabase()) return;
+
     const now = new Date();
     const dateStr = now.toISOString().split('T')[0];
     const timeStr = now.toTimeString().slice(0, 5);
@@ -2137,40 +2227,50 @@ function processQRScan(employee) {
         d.status !== 'absent'
     );
 
+    let row;
     if (existingDTR) {
         // Time out
-        existingDTR.timeOut = timeStr;
-        existingDTR.totalHours = calculateWorkHours(existingDTR.timeIn, timeStr);
-        existingDTR.status = 'present';
-
-        // Calculate late minutes if not set
-        if (!existingDTR.lateMinutes || existingDTR.lateMinutes === 0) {
-            existingDTR.lateMinutes = calculateLateMinutes(existingDTR.timeIn);
-        }
-
+        const totalHours = calculateWorkHours(existingDTR.timeIn, timeStr);
+        const lateMinutes = existingDTR.lateMinutes || calculateLateMinutes(existingDTR.timeIn);
+        row = {
+            employee_id: employee.id,
+            date: dateStr,
+            time_in: existingDTR.timeIn,
+            time_out: timeStr,
+            total_hours: totalHours,
+            ot_hours: existingDTR.otHours || 0,
+            late_minutes: lateMinutes,
+            status: 'present',
+            source: 'camera_scan'
+        };
         showToast(`${employee.firstName} ${employee.lastName} - Time Out: ${timeStr}`, 'info');
     } else {
         // Time in
         const lateMinutes = calculateLateMinutes(timeStr);
-        const newDTR = {
-            id: 'DTR-' + Date.now(),
-            employeeId: employee.id,
+        row = {
+            employee_id: employee.id,
             date: dateStr,
-            timeIn: timeStr,
-            timeOut: null,
-            totalHours: 0,
-            otHours: 0,
-            lateMinutes: lateMinutes,
+            time_in: timeStr,
+            time_out: null,
+            total_hours: 0,
+            ot_hours: 0,
+            late_minutes: lateMinutes,
             status: lateMinutes > 0 ? 'late' : 'present',
-            createdAt: new Date().toISOString()
+            source: 'camera_scan'
         };
-
-        dtrEntries.push(newDTR);
         showToast(`${employee.firstName} ${employee.lastName} - Time In: ${timeStr}`, 'success');
     }
 
-    localStorage.setItem(STORAGE_KEYS.DTR, JSON.stringify(dtrEntries));
-    loadDTR();
+    const { error } = await supabaseClient
+        .from('dtr_entries')
+        .upsert(row, { onConflict: 'employee_id,date' });
+
+    if (error) {
+        showToast('Failed to record scan: ' + error.message, 'error');
+        return;
+    }
+
+    await loadDTR();
     updateDashboard();
     updateQRScannerUI(employee);
 }
@@ -2192,6 +2292,15 @@ function scanAnother() {
     qrScannerActive = true;
 }
 
+// Builds an absolute https URL to the wall-mounted kiosk scan page for one
+// employee - this is what actually gets encoded into their printed QR code.
+// A native phone camera app can't open custom schemes like "payroll://",
+// so this has to be a real, reachable URL (works out of the box once
+// ze-payroll and scan.html are deployed at the same origin).
+function getKioskScanUrl(employeeId) {
+    return new URL(`scan.html?emp=${encodeURIComponent(employeeId)}`, window.location.href).toString();
+}
+
 function generateAllQRCodes() {
     const qrGrid = document.getElementById('qrCodeGrid');
     qrGrid.innerHTML = '';
@@ -2205,12 +2314,13 @@ function generateAllQRCodes() {
             </div>
             <div class="qr-name">${emp.firstName} ${emp.lastName}</div>
             <small class="text-muted">${emp.id}</small>
+            ${!emp.hasPin ? '<small style="color: var(--danger); display:block;">No PIN set - won\'t work at the kiosk yet</small>' : ''}
         `;
         card.onclick = () => viewQREmployee(emp.id);
         qrGrid.appendChild(card);
 
-        // Generate real QR code
-        generateRealQRCode(`payroll://${emp.id}`, `qr-${emp.id}`);
+        // Generate real QR code - points to the wall-mounted scan page
+        generateRealQRCode(getKioskScanUrl(emp.id), `qr-${emp.id}`);
     });
 }
 
@@ -2225,7 +2335,7 @@ function viewQREmployee(id) {
     document.getElementById('qrEmployeeDisplayName').textContent = `${emp.firstName} ${emp.lastName} - ${emp.id}`;
     const qrDisplay = document.getElementById('qrCodeDisplay');
     qrDisplay.innerHTML = '';
-    generateRealQRCode(`payroll://${emp.id}`, 'qrCodeDisplay');
+    generateRealQRCode(getKioskScanUrl(emp.id), 'qrCodeDisplay');
     showModal('qrModal');
 }
 
@@ -2569,35 +2679,53 @@ function exportData() {
 function importData(input) {
     const file = input.files[0];
     if (!file) return;
+    if (!requireSupabase()) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
         try {
             const data = JSON.parse(e.target.result);
 
-            if (confirm('This will replace all existing data. Are you sure you want to continue?')) {
-                if (data.settings) {
-                    settings = data.settings;
-                    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
-                }
-
-                if (data.employees) {
-                    employees = data.employees;
-                    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
-                }
-
-                if (data.dtr) {
-                    dtrEntries = data.dtr;
-                    localStorage.setItem(STORAGE_KEYS.DTR, JSON.stringify(dtrEntries));
-                }
-
-                loadSettings();
-                loadEmployees();
-                loadDTR();
-                updateDashboard();
-
-                showToast('Data imported successfully!', 'success');
+            if (!confirm('This will replace all existing employees and DTR entries in Supabase. Are you sure you want to continue?')) {
+                return;
             }
+
+            if (data.settings) {
+                settings = data.settings;
+                localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+            }
+
+            if (Array.isArray(data.employees) && data.employees.length > 0) {
+                const { error } = await supabaseClient
+                    .from('employees')
+                    .upsert(data.employees.map(mapEmployeeToDb), { onConflict: 'id' });
+                if (error) showToast('Some employees failed to import: ' + error.message, 'error');
+            }
+
+            if (Array.isArray(data.dtr) && data.dtr.length > 0) {
+                const dtrRows = data.dtr.map(d => ({
+                    employee_id: d.employeeId,
+                    date: d.date,
+                    time_in: d.timeIn || null,
+                    time_out: d.timeOut || null,
+                    total_hours: d.totalHours || 0,
+                    ot_hours: d.otHours || 0,
+                    late_minutes: d.lateMinutes || 0,
+                    status: d.status || 'present',
+                    source: 'manual'
+                }));
+                const { error } = await supabaseClient
+                    .from('dtr_entries')
+                    .upsert(dtrRows, { onConflict: 'employee_id,date' });
+                if (error) showToast('Some DTR entries failed to import: ' + error.message, 'error');
+            }
+
+            loadSettings();
+            await loadEmployees();
+            await loadDTR();
+            updateDashboard();
+
+            showToast('Data imported successfully!', 'success');
         } catch (err) {
             showToast('Invalid file format!', 'error');
         }
