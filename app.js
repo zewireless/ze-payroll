@@ -1998,13 +1998,18 @@ async function setupCamera() {
         video.style.cssText = 'width: 100%; max-width: 300px; border-radius: 8px;';
         video.setAttribute('playsinline', '');
         video.muted = true;
-        await video.play();
 
+        // Build the surrounding UI first, then attach the REAL video element
+        // via appendChild (not innerHTML/outerHTML). Setting innerHTML to a
+        // video's outerHTML string drops the live `srcObject` stream - the
+        // browser parses a brand-new, streamless <video> tag from the markup.
+        // That was the bug: the visible video had no feed, while decoding
+        // kept reading frames from the orphaned original element, which
+        // mobile browsers throttle/freeze once it's detached from the DOM -
+        // so scans were silently never detected.
         document.getElementById('qrScannerArea').innerHTML = `
             <div class="qr-placeholder">
-                <div class="qr-frame" style="position: relative; overflow: hidden;">
-                    ${video.outerHTML}
-                </div>
+                <div class="qr-frame" id="qrVideoFrame" style="position: relative; overflow: hidden;"></div>
             </div>
             <p>Point the camera at the employee QR code</p>
             <div class="qr-status">
@@ -2014,6 +2019,8 @@ async function setupCamera() {
                 <i class="fas fa-stop"></i> Stop Scanner
             </button>
         `;
+        document.getElementById('qrVideoFrame').appendChild(video);
+        await video.play();
 
         // Start QR decoding loop
         qrScannerActive = true;
