@@ -345,6 +345,51 @@
                 <div class="settings-grid">
                     <div class="card">
                         <div class="card-header">
+                            <h3><i class="fas fa-globe-asia"></i> Date &amp; Time Settings</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label>System Timezone</label>
+                                <select id="appTimezone" class="form-control">
+                                    <option value="Asia/Manila">Philippine Time (Asia/Manila, UTC+8)</option>
+                                    <option value="UTC">UTC</option>
+                                    <option value="Asia/Singapore">Asia/Singapore (UTC+8)</option>
+                                    <option value="Asia/Hong_Kong">Asia/Hong Kong (UTC+8)</option>
+                                    <option value="Asia/Tokyo">Asia/Tokyo (UTC+9)</option>
+                                    <option value="Asia/Dubai">Asia/Dubai (UTC+4)</option>
+                                    <option value="America/Los_Angeles">America/Los Angeles (US Pacific)</option>
+                                    <option value="America/New_York">America/New York (US Eastern)</option>
+                                    <option value="Europe/London">Europe/London</option>
+                                </select>
+                                <small class="text-muted">All "Today" dates, DTR/QR timestamps, and payroll periods are computed in this timezone, regardless of the device's own clock.</small>
+                            </div>
+                            <div class="form-group">
+                                <div class="checkbox-label">
+                                    <input type="checkbox" id="dtOverrideEnabled" onchange="onDtOverrideToggle()">
+                                    <span>Override current date &amp; time (for testing future dates)</span>
+                                </div>
+                            </div>
+                            <div class="form-group" id="dtOverrideValueGroup">
+                                <label>Set app's "current" date &amp; time</label>
+                                <input type="datetime-local" id="dtOverrideValue" class="form-control">
+                                <small class="text-muted">The clock will keep running forward from this point - it won't stay frozen.</small>
+                            </div>
+                            <div class="form-group">
+                                <button class="btn btn-primary btn-sm" onclick="saveDateTimeSettings()">
+                                    <i class="fas fa-save"></i> Save Date &amp; Time Settings
+                                </button>
+                                <button class="btn btn-outline btn-sm" onclick="clearDateTimeOverride()">
+                                    <i class="fas fa-undo"></i> Reset to Real Time
+                                </button>
+                            </div>
+                            <div class="alert alert-info mt-2">
+                                <i class="fas fa-clock"></i>
+                                App's current date &amp; time: <strong id="appCurrentDateTimeDisplay">-</strong>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
                             <h3><i class="fas fa-clock"></i> Time Settings</h3>
                         </div>
                         <div class="card-body">

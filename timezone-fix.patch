@@ -1,0 +1,475 @@
+diff --git a/app.js b/app.js
+index b87eeaf..f8a38d5 100644
+--- a/app.js
++++ b/app.js
+@@ -97,11 +97,13 @@ async function initializeApp() {
+     await loadDTR();
+     loadPayroll();
+     updateDashboard();
+-    document.getElementById('payrollMonthFilter').value = new Date().toISOString().slice(0, 7);
+-    document.getElementById('reportMonth').value = new Date().toISOString().slice(0, 7);
++    document.getElementById('payrollMonthFilter').value = getTodayYearMonthStr();
++    document.getElementById('reportMonth').value = getTodayYearMonthStr();
+     setDtrRangePreset('full-month');
+     initializeQRScanner();
+     setupRealtimeSync();
++    refreshAppClockDisplay();
++    setInterval(refreshAppClockDisplay, 1000);
+ }
+ 
+ document.addEventListener('DOMContentLoaded', checkAuth);
+@@ -162,6 +164,10 @@ const defaultCompany = {
+ 
+ // Default Settings
+ const defaultSettings = {
++    // Philippine Time by default. Editable under Settings > Date & Time Settings.
++    timezone: 'Asia/Manila',
++    dateTimeOverrideEnabled: false,
++    dateTimeOverrideOffsetMs: 0,
+     lateType: 'per_minute',
+     latePerMinute: 1.00,
+     lateRanges: [
+@@ -199,6 +205,179 @@ const defaultSettings = {
+ // Current settings
+ let settings = {};
+ 
++// ============================================
++// Date / Time Configuration
++// ------------------------------------------------
++// "Today" and "now" are computed from a configured IANA timezone
++// (default Asia/Manila) instead of trusting the device's own clock/
++// timezone. This also lets an admin preview/override the app's
++// "current" date & time (e.g. to test a future payroll cutoff) from
++// Settings > Date & Time Settings.
++//
++// NOTE: previously several places built a date with `.toISOString()`
++// (e.g. `new Date().toISOString().split('T')[0]`). That method always
++// converts to UTC first, so anywhere ahead of UTC (like the
++// Philippines, UTC+8) it silently rolls back to "yesterday" for the
++// first 8 hours of each local day. All of those call sites now go
++// through the helpers below instead.
++// ============================================
++
++const DEFAULT_APP_TIMEZONE = 'Asia/Manila';
++
++function getAppTimeZone() {
++    return (settings && settings.timezone) || DEFAULT_APP_TIMEZONE;
++}
++
++// Real "now", shifted by the admin's override offset (if enabled). The
++// offset is captured once as a fixed number of milliseconds so the
++// clock keeps advancing normally instead of freezing at one instant.
++function getAppNow() {
++    const offsetMs = (settings && settings.dateTimeOverrideEnabled) ? (settings.dateTimeOverrideOffsetMs || 0) : 0;
++    return new Date(Date.now() + offsetMs);
++}
++
++function pad2(n) {
++    return String(n).padStart(2, '0');
++}
++
++// Formats a Date instant as YYYY-MM-DD in the given IANA timezone.
++function formatDateInTZ(date, timeZone) {
++    const parts = new Intl.DateTimeFormat('en-CA', {
++        timeZone, year: 'numeric', month: '2-digit', day: '2-digit'
++    }).formatToParts(date).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
++    return `${parts.year}-${parts.month}-${parts.day}`;
++}
++
++// Formats a Date instant as HH:MM (24hr) in the given IANA timezone.
++function formatTimeInTZ(date, timeZone) {
++    const parts = new Intl.DateTimeFormat('en-GB', {
++        timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
++    }).formatToParts(date).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
++    return `${parts.hour}:${parts.minute}`;
++}
++
++// "Today" as YYYY-MM-DD in the configured app timezone.
++function getTodayDateStr() {
++    return formatDateInTZ(getAppNow(), getAppTimeZone());
++}
++
++// Current clock time as HH:MM in the configured app timezone.
++function getNowTimeStr() {
++    return formatTimeInTZ(getAppNow(), getAppTimeZone());
++}
++
++// "Today" as YYYY-MM in the configured app timezone (for month pickers).
++function getTodayYearMonthStr() {
++    return getTodayDateStr().slice(0, 7);
++}
++
++// Human-readable "now" in the configured timezone, for display only.
++function getNowDisplayStr() {
++    return getAppNow().toLocaleString('en-PH', {
++        timeZone: getAppTimeZone(), dateStyle: 'medium', timeStyle: 'short'
++    });
++}
++
++// Formats a *local calendar* Date object (one built with `new Date(y, m, d)`,
++// where only the Y/M/D components matter) as YYYY-MM-DD using its local
++// getters. Using `.toISOString()` for this would bounce the value through
++// UTC and can shift it a day backward in any timezone ahead of UTC.
++function formatLocalDate(date) {
++    return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
++}
++
++// Adds `deltaDays` (may be negative) to a YYYY-MM-DD string, returning a
++// YYYY-MM-DD string, via local calendar math (safe regardless of the
++// browser's own timezone).
++function addDaysToDateStr(dateStr, deltaDays) {
++    const d = new Date(dateStr + 'T00:00:00');
++    d.setDate(d.getDate() + deltaDays);
++    return formatLocalDate(d);
++}
++
++// First/last day of a given year-month (month is 1-indexed) as YYYY-MM-DD,
++// built directly from the numbers - no Date/timezone conversion involved.
++function getMonthStartStr(year, month) {
++    return `${year}-${pad2(month)}-01`;
++}
++function getMonthEndStr(year, month) {
++    return `${year}-${pad2(month)}-${pad2(getDaysInMonth(year, month))}`;
++}
++
++// Formats a Date instant as a "YYYY-MM-DDTHH:mm" string suitable for
++// prefilling a <input type="datetime-local">, expressed in the given
++// timezone.
++function toDateTimeLocalInputValue(date, timeZone) {
++    return `${formatDateInTZ(date, timeZone)}T${formatTimeInTZ(date, timeZone)}`;
++}
++
++// Returns how far `timeZone` is ahead/behind UTC (in ms) at the given
++// instant.
++function getTZOffsetMs(timeZone, date) {
++    const parts = new Intl.DateTimeFormat('en-US', {
++        timeZone, hourCycle: 'h23',
++        year: 'numeric', month: '2-digit', day: '2-digit',
++        hour: '2-digit', minute: '2-digit', second: '2-digit'
++    }).formatToParts(date).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
++    const asUTC = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
++    return asUTC - date.getTime();
++}
++
++// Interprets a "YYYY-MM-DDTHH:mm" wall-clock string (from a datetime-local
++// input) as being in `timeZone`, and returns the corresponding real Date
++// instant.
++function wallTimeInTZToInstant(dateTimeLocalStr, timeZone) {
++    const asIfUTC = new Date(dateTimeLocalStr + ':00Z');
++    const offsetMs = getTZOffsetMs(timeZone, asIfUTC);
++    return new Date(asIfUTC.getTime() - offsetMs);
++}
++
++function refreshAppClockDisplay() {
++    const el = document.getElementById('appCurrentDateTimeDisplay');
++    if (!el) return;
++    el.textContent = `${getNowDisplayStr()} (${getAppTimeZone()})`;
++}
++
++function onDtOverrideToggle() {
++    const enabled = document.getElementById('dtOverrideEnabled').checked;
++    const group = document.getElementById('dtOverrideValueGroup');
++    if (group) group.classList.toggle('hidden', !enabled);
++    if (enabled && !document.getElementById('dtOverrideValue').value) {
++        document.getElementById('dtOverrideValue').value = toDateTimeLocalInputValue(getAppNow(), getAppTimeZone());
++    }
++}
++
++function saveDateTimeSettings() {
++    settings.timezone = document.getElementById('appTimezone').value || DEFAULT_APP_TIMEZONE;
++    const enabled = document.getElementById('dtOverrideEnabled').checked;
++    settings.dateTimeOverrideEnabled = enabled;
++
++    if (enabled) {
++        const val = document.getElementById('dtOverrideValue').value;
++        if (!val) {
++            showToast('Pick a date & time for the override first.', 'error');
++            return;
++        }
++        const targetInstant = wallTimeInTZToInstant(val, settings.timezone);
++        settings.dateTimeOverrideOffsetMs = targetInstant.getTime() - Date.now();
++    } else {
++        settings.dateTimeOverrideOffsetMs = 0;
++    }
++
++    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
++    showToast('Date & time settings saved!', 'success');
++    refreshAppClockDisplay();
++    updateDashboard();
++    if (document.getElementById('payrollMonthFilter')?.value) loadPayroll();
++}
++
++function clearDateTimeOverride() {
++    document.getElementById('dtOverrideEnabled').checked = false;
++    document.getElementById('dtOverrideValue').value = '';
++    document.getElementById('dtOverrideValueGroup')?.classList.add('hidden');
++    saveDateTimeSettings();
++}
++
+ // Company info
+ let company = {};
+ 
+@@ -225,6 +404,13 @@ function loadSettings() {
+     populateCompanyForm();
+ 
+     // Populate settings form
++    document.getElementById('appTimezone').value = settings.timezone || DEFAULT_APP_TIMEZONE;
++    document.getElementById('dtOverrideEnabled').checked = !!settings.dateTimeOverrideEnabled;
++    document.getElementById('dtOverrideValueGroup').classList.toggle('hidden', !settings.dateTimeOverrideEnabled);
++    document.getElementById('dtOverrideValue').value = settings.dateTimeOverrideEnabled
++        ? toDateTimeLocalInputValue(getAppNow(), settings.timezone || DEFAULT_APP_TIMEZONE)
++        : '';
++    refreshAppClockDisplay();
+     document.getElementById('latePerMinute').value = settings.latePerMinute || 1.00;
+     document.getElementById('otRate').value = settings.otRate || 100.00;
+     document.getElementById('breakMinutes').value = settings.breakMinutes || 60;
+@@ -549,7 +735,7 @@ async function addEmployee() {
+     document.getElementById('dailyRate').value = settings.defaultDailyRate || 400;
+     document.getElementById('hourlyRate').value = settings.defaultHourlyRate || 50;
+     document.getElementById('baseDailyPayInput').value = settings.baseDailyPay || 500;
+-    document.getElementById('hireDate').value = new Date().toISOString().split('T')[0];
++    document.getElementById('hireDate').value = getTodayDateStr();
+     document.getElementById('sssNumber').value = '';
+     document.getElementById('philhealthNumber').value = '';
+     document.getElementById('pagibigNumber').value = '';
+@@ -801,10 +987,9 @@ function setDtrRangePreset(preset) {
+     const toInput = document.getElementById('dtrDateTo');
+     if (!fromInput || !toInput) return;
+ 
+-    const today = new Date();
++    const todayStr = getTodayDateStr();
+ 
+     if (preset === 'today') {
+-        const todayStr = today.toISOString().split('T')[0];
+         fromInput.value = todayStr;
+         toInput.value = todayStr;
+         loadDTR();
+@@ -814,7 +999,7 @@ function setDtrRangePreset(preset) {
+     // Base the month off whatever's currently in "From" (or "To"), so
+     // switching between 1st Half / 2nd Half / Full Month stays on the
+     // same month you're already looking at, instead of jumping to today.
+-    const anchor = fromInput.value ? new Date(fromInput.value + 'T00:00:00') : today;
++    const anchor = new Date((fromInput.value || todayStr) + 'T00:00:00');
+     const year = anchor.getFullYear();
+     const month = anchor.getMonth(); // 0-indexed
+     const lastDay = new Date(year, month + 1, 0).getDate();
+@@ -901,7 +1086,7 @@ function showDTRAddModal() {
+     document.getElementById('dtrEmployee').innerHTML = employees.filter(e => e.status === 'active').map(e =>
+         `<option value="${e.id}">${e.firstName} ${e.lastName} (${e.id})</option>`
+     ).join('');
+-    document.getElementById('dtrDate').value = new Date().toISOString().split('T')[0];
++    document.getElementById('dtrDate').value = getTodayDateStr();
+     document.getElementById('dtrTimeIn').value = '';
+     document.getElementById('dtrTimeOut').value = '';
+     document.getElementById('dtrOTHours').value = '';
+@@ -1032,7 +1217,8 @@ function populatePasteDtrMonthOptions(selectedValue) {
+     if (!select) return;
+     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                          'July', 'August', 'September', 'October', 'November', 'December'];
+-    const now = new Date();
++    const [todayY, todayM] = getTodayYearMonthStr().split('-').map(Number);
++    const now = new Date(todayY, todayM - 1, 1);
+     const options = [];
+     for (let offset = -6; offset <= 2; offset++) {
+         const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+@@ -1309,7 +1495,7 @@ async function createEmployeeFromPasteName(rawName) {
+         dailyRate: settings.defaultDailyRate || 400.00,
+         hourlyRate: settings.defaultHourlyRate || 50.00,
+         baseDailyPay: settings.baseDailyPay || 500.00,
+-        hireDate: new Date().toISOString().split('T')[0],
++        hireDate: getTodayDateStr(),
+         sssNumber: '', philhealthNumber: '', pagibigNumber: '', tin: '',
+         status: 'active'
+     };
+@@ -1690,9 +1876,9 @@ function loadPayroll() {
+ 
+     if (!monthFilter) return;
+ 
+-    const [year, month] = monthFilter.split('-');
+-    const startDate = new Date(year, month - 1, 1).toISOString().split('T')[0];
+-    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
++    const [year, month] = monthFilter.split('-').map(Number);
++    const startDate = getMonthStartStr(year, month);
++    const endDate = getMonthEndStr(year, month);
+ 
+     // Set globals for payslip generation
+     startDateGlobal = startDate;
+@@ -1952,9 +2138,9 @@ function processPayroll() {
+     loadPayroll();
+ 
+     // Save processed payroll records
+-    const [year, month] = monthFilter.split('-');
+-    const startDate = new Date(year, month - 1, 1).toISOString().split('T')[0];
+-    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
++    const [year, month] = monthFilter.split('-').map(Number);
++    const startDate = getMonthStartStr(year, month);
++    const endDate = getMonthEndStr(year, month);
+ 
+     const activeEmployees = employees.filter(e => e.status === 'active');
+     const payrollRecords = [];
+@@ -1974,7 +2160,7 @@ function processPayroll() {
+                 periodStart: startDate,
+                 periodEnd: endDate,
+                 ...payrollData,
+-                generatedAt: new Date().toISOString()
++                generatedAt: getAppNow().toISOString()
+             });
+         }
+     });
+@@ -2116,7 +2302,7 @@ function generatePayslip(employeeId, startDate, endDate) {
+             </div>
+ 
+             <div style="margin-top: 20px; text-align: center; font-size: 10px; color: #999;">
+-                Generated on ${new Date().toLocaleString()} | This is a computer-generated payslip
++                Generated on ${getNowDisplayStr()} | This is a computer-generated payslip
+             </div>
+         </div>
+     `;
+@@ -2324,9 +2510,8 @@ function handleQRCode(data) {
+ async function processQRScan(employee) {
+     if (!requireSupabase()) return;
+ 
+-    const now = new Date();
+-    const dateStr = now.toISOString().split('T')[0];
+-    const timeStr = now.toTimeString().slice(0, 5);
++    const dateStr = getTodayDateStr();
++    const timeStr = getNowTimeStr();
+ 
+     // Check if already scanned today for this employee
+     const existingDTR = dtrEntries.find(d =>
+@@ -2391,7 +2576,7 @@ function updateQRScannerUI(employee) {
+     scannerArea.classList.add('hidden');
+ 
+     document.getElementById('qrEmployeeName').textContent = `${employee.firstName} ${employee.lastName} (${employee.id})`;
+-    document.getElementById('qrTimestamp').textContent = `Time: ${new Date().toLocaleString()}`;
++    document.getElementById('qrTimestamp').textContent = `Time: ${getNowDisplayStr()}`;
+ }
+ 
+ function scanAnother() {
+@@ -2481,7 +2666,7 @@ function updateDashboard() {
+     document.getElementById('totalEmployees').textContent = activeEmployees;
+ 
+     // Present today
+-    const today = new Date().toISOString().split('T')[0];
++    const today = getTodayDateStr();
+     const todayDTR = dtrEntries.filter(d => d.date === today && (d.status === 'present' || d.status === 'late'));
+     document.getElementById('presentToday').textContent = todayDTR.length;
+ 
+@@ -2490,7 +2675,8 @@ function updateDashboard() {
+     document.getElementById('lateToday').textContent = lateToday.length;
+ 
+     // Total payroll (estimated for current month)
+-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
++    const [curY, curM] = getTodayYearMonthStr().split('-').map(Number);
++    const monthStart = getMonthStartStr(curY, curM);
+     const monthDTR = dtrEntries.filter(d => d.date >= monthStart);
+     const totalPayroll = monthDTR.reduce((sum, d) => {
+         const emp = employees.find(e => e.id === d.employeeId);
+@@ -2548,10 +2734,9 @@ function renderAttendanceChart() {
+ 
+     // Get last 7 days
+     const days = [];
++    const todayStr = getTodayDateStr();
+     for (let i = 6; i >= 0; i--) {
+-        const date = new Date();
+-        date.setDate(date.getDate() - i);
+-        days.push(date.toISOString().split('T')[0]);
++        days.push(addDaysToDateStr(todayStr, -i));
+     }
+ 
+     const maxCount = Math.max(...days.map(date =>
+@@ -2584,9 +2769,9 @@ function generateReport() {
+         return;
+     }
+ 
+-    const [year, month] = monthValue.split('-');
+-    const startDate = new Date(year, month - 1, 1).toISOString().split('T')[0];
+-    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
++    const [year, month] = monthValue.split('-').map(Number);
++    const startDate = getMonthStartStr(year, month);
++    const endDate = getMonthEndStr(year, month);
+     const monthName = new Date(year, month - 1).toLocaleString('default', { month: 'long' });
+ 
+     const container = document.getElementById('reportContent');
+@@ -2594,7 +2779,7 @@ function generateReport() {
+     let reportHTML = `
+         <div class="report-header">
+             <h2>Payroll Summary Report</h2>
+-            <p>${monthName} ${year} | Generated: ${new Date().toLocaleString()}</p>
++            <p>${monthName} ${year} | Generated: ${getNowDisplayStr()}</p>
+         </div>
+         <div class="report-summary">
+     `;
+@@ -2768,14 +2953,14 @@ function exportData() {
+         settings: settings,
+         employees: employees,
+         dtr: dtrEntries,
+-        exportedAt: new Date().toISOString()
++        exportedAt: getAppNow().toISOString()
+     };
+ 
+     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+     const url = URL.createObjectURL(blob);
+     const a = document.createElement('a');
+     a.href = url;
+-    a.download = `payroll-export-${new Date().toISOString().split('T')[0]}.json`;
++    a.download = `payroll-export-${getTodayDateStr()}.json`;
+     document.body.appendChild(a);
+     a.click();
+     document.body.removeChild(a);
+diff --git a/index.html b/index.html
+index a182ad5..1cf6c80 100644
+--- a/index.html
++++ b/index.html
+@@ -343,6 +343,51 @@
+             <!-- Settings Page -->
+             <div class="page" id="page-settings">
+                 <div class="settings-grid">
++                    <div class="card">
++                        <div class="card-header">
++                            <h3><i class="fas fa-globe-asia"></i> Date &amp; Time Settings</h3>
++                        </div>
++                        <div class="card-body">
++                            <div class="form-group">
++                                <label>System Timezone</label>
++                                <select id="appTimezone" class="form-control">
++                                    <option value="Asia/Manila">Philippine Time (Asia/Manila, UTC+8)</option>
++                                    <option value="UTC">UTC</option>
++                                    <option value="Asia/Singapore">Asia/Singapore (UTC+8)</option>
++                                    <option value="Asia/Hong_Kong">Asia/Hong Kong (UTC+8)</option>
++                                    <option value="Asia/Tokyo">Asia/Tokyo (UTC+9)</option>
++                                    <option value="Asia/Dubai">Asia/Dubai (UTC+4)</option>
++                                    <option value="America/Los_Angeles">America/Los Angeles (US Pacific)</option>
++                                    <option value="America/New_York">America/New York (US Eastern)</option>
++                                    <option value="Europe/London">Europe/London</option>
++                                </select>
++                                <small class="text-muted">All "Today" dates, DTR/QR timestamps, and payroll periods are computed in this timezone, regardless of the device's own clock.</small>
++                            </div>
++                            <div class="form-group">
++                                <div class="checkbox-label">
++                                    <input type="checkbox" id="dtOverrideEnabled" onchange="onDtOverrideToggle()">
++                                    <span>Override current date &amp; time (for testing future dates)</span>
++                                </div>
++                            </div>
++                            <div class="form-group" id="dtOverrideValueGroup">
++                                <label>Set app's "current" date &amp; time</label>
++                                <input type="datetime-local" id="dtOverrideValue" class="form-control">
++                                <small class="text-muted">The clock will keep running forward from this point - it won't stay frozen.</small>
++                            </div>
++                            <div class="form-group">
++                                <button class="btn btn-primary btn-sm" onclick="saveDateTimeSettings()">
++                                    <i class="fas fa-save"></i> Save Date &amp; Time Settings
++                                </button>
++                                <button class="btn btn-outline btn-sm" onclick="clearDateTimeOverride()">
++                                    <i class="fas fa-undo"></i> Reset to Real Time
++                                </button>
++                            </div>
++                            <div class="alert alert-info mt-2">
++                                <i class="fas fa-clock"></i>
++                                App's current date &amp; time: <strong id="appCurrentDateTimeDisplay">-</strong>
++                            </div>
++                        </div>
++                    </div>
+                     <div class="card">
+                         <div class="card-header">
+                             <h3><i class="fas fa-clock"></i> Time Settings</h3>
