@@ -104,15 +104,27 @@ const defaultSettings = {
     standardTimeIn: '08:00',
     standardTimeOut: '17:00',
     breakMinutes: 60,
+    // Split AM/PM schedule used by the Paste DTR Data grid & attendance rules
+    scheduleAmIn: '08:00',
+    scheduleAmOut: '12:00',
+    schedulePmIn: '13:00',
+    schedulePmOut: '17:00',
+    // Attendance tiers: minutes-late thresholds (inclusive upper bound) for each tier.
+    // 0..lateGraceEnd = Grace (no penalty), then per-minute, then flat 1hr/2hr, then half day, then absent.
+    lateGraceEnd: 10,
+    latePerMinuteEnd: 29,
+    lateFlat1hrEnd: 59,
+    lateFlat2hrEnd: 89,
+    lateHalfDayEnd: 149,
+    // If true, any hours worked on Sunday are paid entirely at the OT rate
+    sundayAllOT: true,
     baseDailyPay: 500.00,
     payrollCutoff: '15',
     payrollFrequency: 'monthly',
     defaultDailyRate: 400.00,
     defaultHourlyRate: 50.00,
     defaultPosition: 'Employee',
-    enableStatutoryDeductions: true,
-    graceMinutes: 10,
-    sundayAllOT: true
+    enableStatutoryDeductions: true
 };
 
 // Current settings
@@ -146,10 +158,16 @@ function loadSettings() {
     // Populate settings form
     document.getElementById('latePerMinute').value = settings.latePerMinute || 1.00;
     document.getElementById('otRate').value = settings.otRate || 100.00;
-    document.getElementById('standardTimeIn').value = settings.standardTimeIn || '08:00';
-    document.getElementById('standardTimeOut').value = settings.standardTimeOut || '17:00';
     document.getElementById('breakMinutes').value = settings.breakMinutes || 60;
-    document.getElementById('graceMinutes').value = settings.graceMinutes ?? 10;
+    document.getElementById('scheduleAmIn').value = settings.scheduleAmIn || '08:00';
+    document.getElementById('scheduleAmOut').value = settings.scheduleAmOut || '12:00';
+    document.getElementById('schedulePmIn').value = settings.schedulePmIn || '13:00';
+    document.getElementById('schedulePmOut').value = settings.schedulePmOut || '17:00';
+    document.getElementById('lateGraceEnd').value = settings.lateGraceEnd ?? 10;
+    document.getElementById('latePerMinuteEnd').value = settings.latePerMinuteEnd ?? 29;
+    document.getElementById('lateFlat1hrEnd').value = settings.lateFlat1hrEnd ?? 59;
+    document.getElementById('lateFlat2hrEnd').value = settings.lateFlat2hrEnd ?? 89;
+    document.getElementById('lateHalfDayEnd').value = settings.lateHalfDayEnd ?? 149;
     document.getElementById('sundayAllOT').checked = settings.sundayAllOT !== false;
     document.getElementById('baseDailyPay').value = settings.baseDailyPay || 500.00;
     document.getElementById('payrollCutoff').value = settings.payrollCutoff || '15';
@@ -176,11 +194,21 @@ function saveSettings() {
     settings.lateType = document.querySelector('input[name="lateType"]:checked')?.value || 'per_minute';
     settings.latePerMinute = parseFloat(document.getElementById('latePerMinute').value) || 0;
     settings.otRate = parseFloat(document.getElementById('otRate').value) || 0;
-    settings.standardTimeIn = document.getElementById('standardTimeIn').value;
-    settings.standardTimeOut = document.getElementById('standardTimeOut').value;
     settings.breakMinutes = parseInt(document.getElementById('breakMinutes').value) || 0;
-    settings.graceMinutes = parseInt(document.getElementById('graceMinutes').value) || 0;
+    settings.scheduleAmIn = document.getElementById('scheduleAmIn').value || '08:00';
+    settings.scheduleAmOut = document.getElementById('scheduleAmOut').value || '12:00';
+    settings.schedulePmIn = document.getElementById('schedulePmIn').value || '13:00';
+    settings.schedulePmOut = document.getElementById('schedulePmOut').value || '17:00';
+    settings.lateGraceEnd = parseInt(document.getElementById('lateGraceEnd').value) || 0;
+    settings.latePerMinuteEnd = parseInt(document.getElementById('latePerMinuteEnd').value) || 0;
+    settings.lateFlat1hrEnd = parseInt(document.getElementById('lateFlat1hrEnd').value) || 0;
+    settings.lateFlat2hrEnd = parseInt(document.getElementById('lateFlat2hrEnd').value) || 0;
+    settings.lateHalfDayEnd = parseInt(document.getElementById('lateHalfDayEnd').value) || 0;
     settings.sundayAllOT = document.getElementById('sundayAllOT').checked;
+    // Keep legacy single time-in/out fields in sync with the AM start / PM end
+    // so older calculation paths (manual DTR entry) stay consistent.
+    settings.standardTimeIn = settings.scheduleAmIn;
+    settings.standardTimeOut = settings.schedulePmOut;
     settings.baseDailyPay = parseFloat(document.getElementById('baseDailyPay').value) || 0;
     settings.payrollCutoff = document.getElementById('payrollCutoff').value;
     settings.payrollFrequency = document.getElementById('payrollFrequency').value;
@@ -650,9 +678,7 @@ function loadDTR() {
 
         const statusClass = dtr.status === 'present' ? 'badge-success' :
                           dtr.status === 'late' ? 'badge-warning' :
-                          dtr.status === 'absent' ? 'badge-danger' :
-                          dtr.status === 'half_day' ? 'badge-warning' :
-                          dtr.status === 'rest_day' ? 'badge-info' : 'badge-info';
+                          dtr.status === 'absent' ? 'badge-danger' : 'badge-info';
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -665,7 +691,7 @@ function loadDTR() {
             <td>${dtr.totalHours ? dtr.totalHours.toFixed(2) + ' hrs' : '-'}</td>
             <td>${dtr.otHours ? dtr.otHours.toFixed(2) + ' hrs' : '0.00 hrs'}</td>
             <td>${dtr.lateMinutes || 0} min</td>
-            <td><span class="badge ${statusClass}">${formatStatusLabel(dtr.status)}</span></td>
+            <td><span class="badge ${statusClass}">${capitalize(dtr.status)}</span></td>
             <td class="actions">
                 <button class="btn-icon" onclick="editDTR('${dtr.id}')" title="Edit">
                     <i class="fas fa-pen"></i>
@@ -792,485 +818,434 @@ function deleteDTR(id) {
 }
 
 // ============================================
-// Paste DTR Data (grid: employees x days for a month)
+// Paste DTR Data — multi-employee monthly grid
+// (Replaces the old single-employee bulk paste UI.)
 // ============================================
 
-let pasteDtrState = {
-    year: new Date().getFullYear(),
-    month: new Date().getMonth(), // 0-11
-    activeTab: 'first', // 'first' = days 1-15, 'second' = days 16-end
-    rows: []
-};
+let pasteDtrDaysInMonth = 30;
+let pasteDtrActiveTab = 1;
+const PASTE_DTR_DAY1_END = 15;
+const WEEKDAY_ABBR = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 function getActiveEmployees() {
     return employees.filter(e => e.status === 'active');
 }
 
-function daysInPasteDtrMonth() {
-    return new Date(pasteDtrState.year, pasteDtrState.month + 1, 0).getDate();
+function getDaysInMonth(year, month) {
+    // month is 1-indexed
+    return new Date(year, month, 0).getDate();
 }
 
-function isPasteDtrSunday(day) {
-    return new Date(pasteDtrState.year, pasteDtrState.month, day).getDay() === 0;
+function getPasteDtrMonthValue() {
+    return document.getElementById('pasteDtrMonth')?.value || '';
 }
 
-function emptyPasteDtrRow() {
-    return { name: '', employeeId: null, days: {} };
-}
-
-function ensurePasteDtrRowCount(min) {
-    while (pasteDtrState.rows.length < min) {
-        pasteDtrState.rows.push(emptyPasteDtrRow());
-    }
-}
-
-function showBulkDTRModal() {
+function populatePasteDtrMonthOptions(selectedValue) {
+    const select = document.getElementById('pasteDtrMonth');
+    if (!select) return;
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                         'July', 'August', 'September', 'October', 'November', 'December'];
     const now = new Date();
-    pasteDtrState = {
-        year: now.getFullYear(),
-        month: now.getMonth(),
-        activeTab: 'first',
-        rows: []
-    };
-    ensurePasteDtrRowCount(5);
+    const options = [];
+    for (let offset = -6; offset <= 2; offset++) {
+        const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+        const y = d.getFullYear();
+        const m = d.getMonth() + 1;
+        const value = `${y}-${String(m).padStart(2, '0')}`;
+        options.push(`<option value="${value}">${monthNames[m - 1]} ${y}</option>`);
+    }
+    select.innerHTML = options.join('');
+    select.value = selectedValue || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
 
-    populatePasteDtrMonthSelect();
+function showPasteDTRModal() {
+    populatePasteDtrMonthOptions();
     populatePasteDtrEmployeeDatalist();
-    renderPasteDtrRulesText();
-    setPasteDtrActiveTabButtons();
-    renderPasteDtrTable();
-    updatePasteDtrSummary();
-
+    pasteDtrActiveTab = 1;
+    buildPasteDtrGrid();
+    setupPasteDtrPasteHandler();
     showModal('bulkDtrModal');
 }
 
-function populatePasteDtrMonthSelect() {
-    const select = document.getElementById('pasteDtrMonth');
-    const now = new Date();
-    const options = [];
-    // 6 months back to 3 months ahead of the current month
-    for (let offset = -6; offset <= 3; offset++) {
-        const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-        const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-        options.push(`<option value="${value}">${label}</option>`);
-    }
-    select.innerHTML = options.join('');
-    select.value = `${pasteDtrState.year}-${String(pasteDtrState.month + 1).padStart(2, '0')}`;
+// Backward-compatible alias in case older markup still references this name.
+function showBulkDTRModal() {
+    showPasteDTRModal();
 }
 
 function populatePasteDtrEmployeeDatalist() {
-    const list = document.getElementById('pasteDtrEmployeesList');
-    list.innerHTML = getActiveEmployees().map(e =>
-        `<option value="${escapeHtml(e.firstName + ' ' + e.lastName)}">`
-    ).join('');
+    const list = document.getElementById('pasteDtrEmployeeList');
+    if (!list) return;
+    list.innerHTML = getActiveEmployees()
+        .map(e => `<option value="${escapeHtml(e.firstName + ' ' + e.lastName)}">`)
+        .join('');
 }
 
-function changePasteDtrMonth() {
-    const value = document.getElementById('pasteDtrMonth').value; // YYYY-MM
-    const [y, m] = value.split('-').map(Number);
-    pasteDtrState.year = y;
-    pasteDtrState.month = m - 1;
-    pasteDtrState.activeTab = 'first';
-    setPasteDtrActiveTabButtons();
-    renderPasteDtrRulesText();
-    renderPasteDtrTable();
-    updatePasteDtrSummary();
+function onPasteDtrMonthChange() {
+    // Keep whatever employee names were already typed; reset day cells
+    // since the number/labels of days can change between months.
+    const names = [...document.querySelectorAll('#pasteDtrTableBody .paste-dtr-name-input')].map(i => i.value);
+    pasteDtrActiveTab = 1;
+    buildPasteDtrGrid(names);
+}
+
+function buildPasteDtrGrid(preserveNames) {
+    const monthValue = getPasteDtrMonthValue();
+    if (!monthValue) return;
+    const [yearStr, monthStr] = monthValue.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    pasteDtrDaysInMonth = getDaysInMonth(year, month);
+
+    renderPasteDtrRulesHint();
+    renderPasteDtrTabs();
+    renderPasteDtrTableHead(year, month);
+    renderPasteDtrTableBody(preserveNames);
+    applyPasteDtrTabVisibility();
+}
+
+function renderPasteDtrRulesHint() {
+    const hintEl = document.getElementById('pasteDtrRulesHint');
+    if (!hintEl) return;
+
+    const toClock = (m) => {
+        const wrapped = ((m % (24 * 60)) + 24 * 60) % (24 * 60);
+        const h = Math.floor(wrapped / 60);
+        const mm = wrapped % 60;
+        return `${h}:${String(mm).padStart(2, '0')}`;
+    };
+    const amIn = timeStrToMinutes(settings.scheduleAmIn || '08:00') || 0;
+    const grace = settings.lateGraceEnd ?? 10;
+    const perMinEnd = settings.latePerMinuteEnd ?? 29;
+    const flat1hrEnd = settings.lateFlat1hrEnd ?? 59;
+    const flat2hrEnd = settings.lateFlat2hrEnd ?? 89;
+    const halfDayEnd = settings.lateHalfDayEnd ?? 149;
+    const tierRange = (start, end) => `${toClock(amIn + start)}-${toClock(amIn + end)}`;
+
+    const perMinuteLabel = settings.lateType === 'per_minute'
+        ? `₱${formatNumber(settings.latePerMinute || 0)}/min late`
+        : 'minutes late';
+
+    const rulesParts = [
+        `Grace ${tierRange(0, grace)}`,
+        `${tierRange(grace + 1, perMinEnd)}: ${perMinuteLabel}`,
+        `${tierRange(perMinEnd + 1, flat1hrEnd)}: 1hr`,
+        `${tierRange(flat1hrEnd + 1, flat2hrEnd)}: 2hr`,
+        `${tierRange(flat2hrEnd + 1, halfDayEnd)}: Half day`
+    ];
+
+    const scheduleText = `${settings.scheduleAmIn}-${settings.scheduleAmOut} & ${settings.schedulePmIn}-${settings.schedulePmOut} | OT: Beyond ${settings.schedulePmOut}`;
+
+    hintEl.innerHTML = `
+        <div>Enter employee names and time in/out for each day. Format: HH:MM (e.g., 08:00, 17:00)</div>
+        <div><strong>Late Rules:</strong> ${rulesParts.join(' | ')}</div>
+        <div><strong>Schedule:</strong> ${scheduleText}${settings.sundayAllOT ? ' | <span class="badge badge-warning">SUN</span> = All hours at OT rate' : ''}</div>
+    `;
+}
+
+function renderPasteDtrTabs() {
+    const wrap = document.getElementById('pasteDtrTabs');
+    if (!wrap) return;
+    wrap.innerHTML = `
+        <button type="button" class="paste-dtr-tab ${pasteDtrActiveTab === 1 ? 'active' : ''}" onclick="switchPasteDtrTab(1)">Days 1-${PASTE_DTR_DAY1_END}</button>
+        <button type="button" class="paste-dtr-tab ${pasteDtrActiveTab === 2 ? 'active' : ''}" onclick="switchPasteDtrTab(2)">Days ${PASTE_DTR_DAY1_END + 1}-${pasteDtrDaysInMonth}</button>
+    `;
 }
 
 function switchPasteDtrTab(tab) {
-    pasteDtrState.activeTab = tab;
-    setPasteDtrActiveTabButtons();
-    renderPasteDtrTable();
+    pasteDtrActiveTab = tab;
+    renderPasteDtrTabs();
+    applyPasteDtrTabVisibility();
 }
 
-function setPasteDtrActiveTabButtons() {
-    const total = daysInPasteDtrMonth();
-    document.getElementById('pasteDtrTabFirst').classList.toggle('active', pasteDtrState.activeTab === 'first');
-    document.getElementById('pasteDtrTabSecond').classList.toggle('active', pasteDtrState.activeTab === 'second');
-    document.getElementById('pasteDtrTabSecond').textContent = `Days 16-${total}`;
+function applyPasteDtrTabVisibility() {
+    document.querySelectorAll('#pasteDtrTable .day-group-1').forEach(el => {
+        el.classList.toggle('paste-dtr-hidden', pasteDtrActiveTab !== 1);
+    });
+    document.querySelectorAll('#pasteDtrTable .day-group-2').forEach(el => {
+        el.classList.toggle('paste-dtr-hidden', pasteDtrActiveTab !== 2);
+    });
 }
 
-function getPasteDtrTabDayRange() {
-    const total = daysInPasteDtrMonth();
-    if (pasteDtrState.activeTab === 'first') {
-        return [1, Math.min(15, total)];
-    }
-    return [16, total];
-}
+function renderPasteDtrTableHead(year, month) {
+    const thead = document.getElementById('pasteDtrTableHead');
+    if (!thead) return;
 
-// Build a human-readable rules summary from actual configured Settings,
-// so the hint stays accurate instead of a hardcoded mock-up label.
-function renderPasteDtrRulesText() {
-    const el = document.getElementById('pasteDtrRulesText');
-    const stdIn = settings.standardTimeIn || '08:00';
-    const stdOut = settings.standardTimeOut || '17:00';
-    const grace = settings.graceMinutes || 0;
-    const graceEnd = addMinutesToTime(stdIn, grace);
-
-    let lateText;
-    if (settings.lateType === 'per_minute') {
-        lateText = `₱${formatNumber(settings.latePerMinute || 0)} deducted per minute late`;
-    } else {
-        const ranges = settings.lateRanges || [];
-        lateText = ranges.length
-            ? ranges.map(r => `${r.min}-${r.max} min: ₱${formatNumber(r.amount)}`).join(' | ')
-            : 'No late ranges configured';
-    }
-
-    const sundayText = settings.sundayAllOT
-        ? 'All hours at OT rate'
-        : 'Regular schedule applies';
-
-    el.innerHTML = `
-        <strong>Late Rules:</strong> Grace ${stdIn}-${graceEnd}${grace ? ' (' + grace + ' min)' : ''} | ${lateText}<br>
-        <strong>Schedule:</strong> Time In ${stdIn} - Time Out ${stdOut} | <strong>OT:</strong> Beyond ${stdOut} |
-        <strong>SUN</strong> = ${sundayText}
-    `;
-}
-
-function addMinutesToTime(hhmm, minutes) {
-    const [h, m] = (hhmm || '00:00').split(':').map(Number);
-    let total = h * 60 + m + (minutes || 0);
-    total = ((total % 1440) + 1440) % 1440;
-    const hh = Math.floor(total / 60);
-    const mm = total % 60;
-    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
-}
-
-function renderPasteDtrTable() {
-    const table = document.getElementById('pasteDtrTable');
-    const [startDay, endDay] = getPasteDtrTabDayRange();
-
-    if (startDay > endDay) {
-        table.innerHTML = `<tbody><tr><td class="text-center text-muted" style="padding: 24px;">This month has no days in this range.</td></tr></tbody>`;
-        return;
-    }
-
-    let dayHeaders = '';
-    for (let d = startDay; d <= endDay; d++) {
-        const sunday = isPasteDtrSunday(d);
-        const weekday = new Date(pasteDtrState.year, pasteDtrState.month, d).toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
-        dayHeaders += `
-            <th class="${sunday ? 'paste-dtr-day-sun' : ''}" data-day="${d}">
-                Day ${d} ${sunday ? '<span class="badge badge-warning" style="font-size:9px;padding:1px 4px;">SUN</span>' : `<span class="paste-dtr-day-sub">${weekday}</span>`}
-                <div class="paste-dtr-day-sub">In / Out</div>
+    let headerCells = `<th class="paste-dtr-emp-col">Employee</th>`;
+    for (let day = 1; day <= pasteDtrDaysInMonth; day++) {
+        const dateObj = new Date(year, month - 1, day);
+        const weekday = WEEKDAY_ABBR[dateObj.getDay()];
+        const isSunday = dateObj.getDay() === 0;
+        const groupClass = day <= PASTE_DTR_DAY1_END ? 'day-group-1' : 'day-group-2';
+        headerCells += `
+            <th class="paste-dtr-day-col ${groupClass} ${isSunday ? 'paste-dtr-sunday' : ''}">
+                <div>Day ${day} ${isSunday ? '<span class="badge badge-warning">SUN</span>' : `<small class="paste-dtr-weekday">${weekday}</small>`}</div>
+                <small>In / Out</small>
             </th>`;
     }
-
-    let bodyRows = '';
-    pasteDtrState.rows.forEach((row, rowIndex) => {
-        let dayCells = '';
-        for (let d = startDay; d <= endDay; d++) {
-            const sunday = isPasteDtrSunday(d);
-            const val = row.days[d] || {};
-            dayCells += `
-                <td class="paste-dtr-day-cell ${sunday ? 'paste-dtr-day-sun' : ''}" data-row="${rowIndex}" data-day="${d}">
-                    <input type="text" class="paste-dtr-time-input" placeholder="08:00" maxlength="5"
-                        value="${escapeHtml(val.in || '')}" data-row="${rowIndex}" data-day="${d}" data-field="in"><br>
-                    <input type="text" class="paste-dtr-time-input" placeholder="17:00" maxlength="5"
-                        value="${escapeHtml(val.out || '')}" data-row="${rowIndex}" data-day="${d}" data-field="out">
-                </td>`;
-        }
-
-        bodyRows += `
-            <tr>
-                <td class="paste-dtr-emp-col">
-                    <input type="text" class="paste-dtr-name-input ${row.name && !row.employeeId ? 'unmatched' : ''}"
-                        placeholder="Name" list="pasteDtrEmployeesList" value="${escapeHtml(row.name || '')}"
-                        data-row="${rowIndex}" data-field="name">
-                </td>
-                ${dayCells}
-                <td style="width: 30px;">
-                    <button type="button" class="paste-dtr-remove-row" onclick="removePasteDtrRow(${rowIndex})" title="Remove row">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </td>
-            </tr>`;
-    });
-
-    table.innerHTML = `
-        <thead>
-            <tr>
-                <th class="paste-dtr-emp-col">Employee</th>
-                ${dayHeaders}
-                <th style="width: 30px;"></th>
-            </tr>
-        </thead>
-        <tbody id="pasteDtrTableBody">${bodyRows}</tbody>
-    `;
-
-    wirePasteDtrGridEvents();
+    headerCells += `<th class="paste-dtr-del-col"></th>`;
+    thead.innerHTML = `<tr>${headerCells}</tr>`;
 }
 
-function wirePasteDtrGridEvents() {
+function renderPasteDtrTableBody(preserveNames) {
     const tbody = document.getElementById('pasteDtrTableBody');
     if (!tbody) return;
+    tbody.innerHTML = '';
 
-    tbody.addEventListener('input', onPasteDtrCellInput);
-    tbody.addEventListener('change', onPasteDtrCellChange);
-    tbody.addEventListener('paste', onPasteDtrGridPaste);
+    const names = (preserveNames && preserveNames.length > 0) ? preserveNames : [''];
+    names.forEach(name => addPasteDtrEmployeeRow(name));
 }
 
-function onPasteDtrCellInput(e) {
-    const el = e.target;
-    const rowIndex = parseInt(el.dataset.row, 10);
-    if (isNaN(rowIndex) || !pasteDtrState.rows[rowIndex]) return;
-    const row = pasteDtrState.rows[rowIndex];
+function addPasteDtrEmployeeRow(name) {
+    const tbody = document.getElementById('pasteDtrTableBody');
+    if (!tbody) return null;
+    const row = document.createElement('tr');
 
-    if (el.dataset.field === 'name') {
-        row.name = el.value;
-    } else if (el.dataset.day) {
-        const day = parseInt(el.dataset.day, 10);
-        if (!row.days[day]) row.days[day] = { in: '', out: '' };
-        row.days[day][el.dataset.field] = el.value;
-        updatePasteDtrSummary();
+    let cells = `
+        <td class="paste-dtr-emp-col">
+            <input type="text" class="form-control paste-dtr-name-input" list="pasteDtrEmployeeList" placeholder="Name" value="${escapeHtml(name || '')}">
+        </td>`;
+
+    for (let day = 1; day <= pasteDtrDaysInMonth; day++) {
+        const groupClass = day <= PASTE_DTR_DAY1_END ? 'day-group-1' : 'day-group-2';
+        const hiddenClass = (groupClass === 'day-group-1') === (pasteDtrActiveTab === 1) ? '' : 'paste-dtr-hidden';
+        cells += `
+            <td class="paste-dtr-day-cell ${groupClass} ${hiddenClass}" data-day="${day}">
+                <input type="time" class="form-control paste-dtr-time-in" title="Time In">
+                <input type="time" class="form-control paste-dtr-time-out" title="Time Out">
+            </td>`;
     }
+
+    cells += `
+        <td class="paste-dtr-del-col">
+            <button class="btn-icon" type="button" onclick="removePasteDtrRow(this)" title="Remove row" style="color: var(--danger);">
+                <i class="fas fa-trash"></i>
+            </button>
+        </td>`;
+
+    row.innerHTML = cells;
+    tbody.appendChild(row);
+    return row;
 }
 
-function onPasteDtrCellChange(e) {
-    const el = e.target;
-    const rowIndex = parseInt(el.dataset.row, 10);
-    if (isNaN(rowIndex) || !pasteDtrState.rows[rowIndex]) return;
-    const row = pasteDtrState.rows[rowIndex];
-
-    if (el.dataset.field === 'name') {
-        row.name = el.value.trim();
-        const match = row.name ? matchEmployeeByName(row.name) : null;
-        row.employeeId = match ? match.id : null;
-        if (match) row.name = `${match.firstName} ${match.lastName}`;
-        el.classList.toggle('unmatched', !!row.name && !row.employeeId);
-        el.value = row.name;
-    } else if (el.dataset.day) {
-        const day = parseInt(el.dataset.day, 10);
-        const normalized = normalizeTimeInput(el.value);
-        el.value = normalized;
-        if (!row.days[day]) row.days[day] = { in: '', out: '' };
-        row.days[day][el.dataset.field] = normalized;
-    }
-    updatePasteDtrSummary();
+function removePasteDtrRow(btn) {
+    const tbody = document.getElementById('pasteDtrTableBody');
+    btn.closest('tr').remove();
+    if (tbody && tbody.rows.length === 0) addPasteDtrEmployeeRow('');
 }
 
-function normalizeTimeInput(value) {
-    const normalized = normalizeTime(value);
-    return normalized || value.trim();
+function clearPasteDtrGrid() {
+    if (!confirm('Clear all rows in this grid? This does not affect entries already saved.')) return;
+    buildPasteDtrGrid();
 }
 
-function addPasteDtrRow() {
-    pasteDtrState.rows.push(emptyPasteDtrRow());
-    renderPasteDtrTable();
-    updatePasteDtrSummary();
+// --- Spreadsheet-style paste across the whole grid ---
+
+function setupPasteDtrPasteHandler() {
+    const table = document.getElementById('pasteDtrTable');
+    if (!table || table.dataset.pasteBound) return;
+    table.dataset.pasteBound = '1';
+    table.addEventListener('paste', handlePasteDtrGridPaste);
 }
 
-function removePasteDtrRow(rowIndex) {
-    pasteDtrState.rows.splice(rowIndex, 1);
-    if (pasteDtrState.rows.length === 0) pasteDtrState.rows.push(emptyPasteDtrRow());
-    renderPasteDtrTable();
-    updatePasteDtrSummary();
+function getPasteDtrRowInputs(row) {
+    // Ordered: [nameInput, day1In, day1Out, day2In, day2Out, ...]
+    const inputs = [row.querySelector('.paste-dtr-name-input')];
+    row.querySelectorAll('.paste-dtr-day-cell').forEach(cell => {
+        inputs.push(cell.querySelector('.paste-dtr-time-in'));
+        inputs.push(cell.querySelector('.paste-dtr-time-out'));
+    });
+    return inputs;
 }
 
-// Handles pasting a block of spreadsheet data anywhere in the grid.
-// If pasted starting on the Name column: [Name, Day In, Day Out, Day In, Day Out, ...]
-// aligned to the currently visible day range.
-// If pasted starting on a day cell: fills that day (and following days/rows) directly.
-function onPasteDtrGridPaste(e) {
-    const target = e.target;
-    if (!target.dataset || !target.dataset.field) return;
-    const text = (e.clipboardData || window.clipboardData)?.getData('text/plain');
-    if (!text || (!text.includes('\t') && !text.includes('\n'))) return;
+function handlePasteDtrGridPaste(e) {
+    const text = e.clipboardData?.getData('text/plain');
+    if (!text) return;
+    // A single value (no tabs/newlines) - let the browser paste normally into the one field.
+    if (!text.includes('\t') && !text.includes('\n')) return;
 
+    const target = e.target.closest('input');
+    if (!target) return;
     e.preventDefault();
 
-    const startRow = parseInt(target.dataset.row, 10);
-    const startField = target.dataset.field;
-    const startDay = target.dataset.day ? parseInt(target.dataset.day, 10) : null;
-    const [tabStartDay] = getPasteDtrTabDayRange();
+    const tbody = document.getElementById('pasteDtrTableBody');
+    const startRow = target.closest('tr');
+    let rows = [...tbody.querySelectorAll('tr')];
+    const startRowIndex = rows.indexOf(startRow);
+    const startInputs = getPasteDtrRowInputs(startRow);
+    let startColIndex = startInputs.indexOf(target);
+    if (startColIndex === -1) startColIndex = 0;
 
-    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.length > 0);
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+        .filter((l, i, arr) => !(i === arr.length - 1 && l === ''));
 
-    lines.forEach((line, i) => {
-        const cells = splitDtrColumns(line);
-        const rowIndex = startRow + i;
-        ensurePasteDtrRowCount(rowIndex + 1);
-        const row = pasteDtrState.rows[rowIndex];
-
-        let cellStart = 0;
-        if (startField === 'name') {
-            row.name = (cells[0] || '').trim();
-            const match = row.name ? matchEmployeeByName(row.name) : null;
-            row.employeeId = match ? match.id : null;
-            cellStart = 1;
-            // Remaining cells: pairs of (In, Out) starting at the first visible day
-            let day = tabStartDay;
-            for (let c = cellStart; c < cells.length; c += 2) {
-                const inVal = normalizeTimeInput(cells[c] || '');
-                const outVal = normalizeTimeInput(cells[c + 1] || '');
-                if (!row.days[day]) row.days[day] = { in: '', out: '' };
-                row.days[day].in = inVal;
-                row.days[day].out = outVal;
-                day++;
-            }
-        } else {
-            // Pasting starting mid-row on a specific day/field: continue alternating in/out
-            let day = startDay;
-            let field = startField;
-            for (let c = 0; c < cells.length; c++) {
-                const val = normalizeTimeInput(cells[c] || '');
-                if (!row.days[day]) row.days[day] = { in: '', out: '' };
-                row.days[day][field] = val;
-                if (field === 'in') {
-                    field = 'out';
-                } else {
-                    field = 'in';
-                    day++;
-                }
-            }
+    lines.forEach((line, r) => {
+        const cols = line.split('\t');
+        const rowIndex = startRowIndex + r;
+        while (rowIndex >= rows.length) {
+            addPasteDtrEmployeeRow('');
+            rows = [...tbody.querySelectorAll('tr')];
         }
-    });
+        const targetRow = rows[rowIndex];
+        const inputs = getPasteDtrRowInputs(targetRow);
 
-    renderPasteDtrTable();
-    updatePasteDtrSummary();
-    showToast(`Pasted ${lines.length} row(s) into the grid. Review and Import.`, 'success');
-}
-
-function updatePasteDtrSummary() {
-    let employeeCount = 0;
-    let dayEntryCount = 0;
-    pasteDtrState.rows.forEach(row => {
-        if (!row.name && !row.employeeId) return;
-        let hasAny = false;
-        Object.values(row.days).forEach(d => {
-            if (d && (d.in || d.out)) {
-                dayEntryCount++;
-                hasAny = true;
+        cols.forEach((val, c) => {
+            const input = inputs[startColIndex + c];
+            if (!input) return; // beyond the last day column in the month, ignore
+            const trimmed = val.trim();
+            if (!trimmed) return;
+            if (input.classList.contains('paste-dtr-name-input')) {
+                input.value = trimmed;
+            } else if (input.type === 'time') {
+                const t = normalizeTime(trimmed);
+                if (t) input.value = t;
             }
         });
-        if (hasAny || row.name) employeeCount++;
     });
-    const el = document.getElementById('pasteDtrRowCount');
-    if (el) el.textContent = `${employeeCount} employee${employeeCount === 1 ? '' : 's'}, ${dayEntryCount} day entries ready to import`;
+
+    applyPasteDtrTabVisibility();
+    showToast(`Pasted ${lines.length} row(s) into the grid.`, 'success');
 }
 
-function determineAttendanceStatus(lateMinutes, hasTimeOut) {
-    if (settings.lateType === 'per_range' && (settings.lateRanges || []).length > 0 && lateMinutes > 0) {
-        const maxRange = settings.lateRanges.reduce((max, r) => r.max > max ? r.max : max, 0);
-        if (lateMinutes > maxRange) return 'half_day';
-    }
-    if (lateMinutes > 0) return 'late';
-    return hasTimeOut === false ? 'half_day' : 'present';
+// --- Import into DTR records ---
+
+function createEmployeeFromPasteName(rawName) {
+    const parts = rawName.trim().replace(/\s+/g, ' ').split(' ');
+    const firstName = parts.shift() || rawName;
+    const lastName = parts.join(' ') || '-';
+    const newEmployee = {
+        id: generateEmployeeId(),
+        firstName,
+        middleName: '',
+        lastName,
+        position: settings.defaultPosition || 'Employee',
+        department: '',
+        email: '',
+        phone: '',
+        address: '',
+        dailyRate: settings.defaultDailyRate || 400.00,
+        hourlyRate: settings.defaultHourlyRate || 50.00,
+        baseDailyPay: settings.baseDailyPay || 500.00,
+        hireDate: new Date().toISOString().split('T')[0],
+        sssNumber: '',
+        philhealthNumber: '',
+        pagibigNumber: '',
+        tin: '',
+        status: 'active',
+        createdAt: new Date().toISOString()
+    };
+    employees.push(newEmployee);
+    return newEmployee;
 }
 
 function importPasteDtrAttendance() {
-    const totalDays = daysInPasteDtrMonth();
-    const unmatchedNames = [];
-    let added = 0;
-    let updated = 0;
-    let skippedNoTime = 0;
+    const monthValue = getPasteDtrMonthValue();
+    if (!monthValue) {
+        showToast('Select a month first.', 'error');
+        return;
+    }
+    const [yearStr, monthStr] = monthValue.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
 
-    pasteDtrState.rows.forEach(row => {
-        if (!row.name) return;
+    const rows = [...document.querySelectorAll('#pasteDtrTableBody tr')];
+    let newEmployees = 0;
+    let importedEntries = 0;
+    let skippedIncomplete = 0;
 
-        let employeeId = row.employeeId;
-        if (!employeeId) {
-            const match = matchEmployeeByName(row.name);
-            employeeId = match ? match.id : null;
+    rows.forEach(row => {
+        const nameInput = row.querySelector('.paste-dtr-name-input');
+        const rawName = (nameInput?.value || '').trim();
+        if (!rawName) return; // skip blank rows entirely
+
+        let employee = matchEmployeeByName(rawName);
+        if (!employee) {
+            employee = createEmployeeFromPasteName(rawName);
+            newEmployees++;
         }
-        if (!employeeId) {
-            unmatchedNames.push(row.name);
-            return;
-        }
 
-        for (let day = 1; day <= totalDays; day++) {
-            const entry = row.days[day];
-            if (!entry || (!entry.in && !entry.out)) continue;
+        row.querySelectorAll('.paste-dtr-day-cell').forEach(cell => {
+            const day = parseInt(cell.dataset.day, 10);
+            const timeIn = cell.querySelector('.paste-dtr-time-in')?.value || '';
+            const timeOut = cell.querySelector('.paste-dtr-time-out')?.value || '';
+            if (!timeIn && !timeOut) return; // nothing entered for this day
 
-            const date = `${pasteDtrState.year}-${String(pasteDtrState.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const timeIn = entry.in || '';
-            const timeOut = entry.out || '';
-            const sunday = isPasteDtrSunday(day);
-
-            let totalHours = 0;
-            if (timeIn && timeOut) {
-                totalHours = calculateWorkHours(timeIn, timeOut);
+            if (!timeIn || !timeOut) {
+                skippedIncomplete++;
+                return; // need both Time In and Time Out to compute a day
             }
 
-            let lateMinutes = 0;
-            let otHours = 0;
-            let status;
+            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const result = computeDtrForDay(timeIn, timeOut, dateStr);
+            if (!result) return;
 
-            if (sunday && settings.sundayAllOT) {
-                // Entire worked time on Sunday counts as OT, no lateness/regular pay
-                otHours = totalHours;
-                status = 'rest_day';
-            } else {
-                lateMinutes = calculateLateMinutes(timeIn);
-                status = determineAttendanceStatus(lateMinutes, !!timeOut);
-                if (timeOut && totalHours > 0) {
-                    const stdOutMinutes = timeToMinutes(settings.standardTimeOut);
-                    const outMinutes = timeToMinutes(timeOut);
-                    if (stdOutMinutes !== null && outMinutes !== null && outMinutes > stdOutMinutes) {
-                        otHours = (outMinutes - stdOutMinutes) / 60;
-                    }
-                }
-            }
-
-            if (!timeIn && !timeOut) { skippedNoTime++; continue; }
-
-            const existingIdx = dtrEntries.findIndex(d => d.employeeId === employeeId && d.date === date);
-            const payload = {
-                employeeId,
-                date,
+            const existingIdx = dtrEntries.findIndex(d => d.employeeId === employee.id && d.date === dateStr);
+            const entry = {
+                id: existingIdx !== -1 ? dtrEntries[existingIdx].id : 'DTR-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+                employeeId: employee.id,
+                date: dateStr,
                 timeIn,
                 timeOut,
-                totalHours,
-                otHours,
-                lateMinutes,
-                status
+                totalHours: result.totalHours,
+                otHours: result.otHours,
+                lateMinutes: result.lateMinutes,
+                status: result.status,
+                createdAt: existingIdx !== -1 ? dtrEntries[existingIdx].createdAt : new Date().toISOString()
             };
 
             if (existingIdx !== -1) {
-                dtrEntries[existingIdx] = { ...dtrEntries[existingIdx], ...payload };
-                updated++;
+                dtrEntries[existingIdx] = entry;
             } else {
-                dtrEntries.push({
-                    id: 'DTR-' + Date.now() + '-' + added + '-' + Math.floor(Math.random() * 1000),
-                    ...payload,
-                    createdAt: new Date().toISOString()
-                });
-                added++;
+                dtrEntries.push(entry);
             }
-        }
+            importedEntries++;
+        });
     });
 
-    if (added === 0 && updated === 0) {
-        if (unmatchedNames.length > 0) {
-            showToast(`Could not match: ${unmatchedNames.join(', ')}. Pick a name from the suggestions list.`, 'error');
-        } else {
-            showToast('Add at least one employee with a time in/out entry.', 'error');
-        }
+    if (importedEntries === 0) {
+        showToast('No complete Time In / Time Out pairs found to import.', 'error');
         return;
     }
 
     localStorage.setItem(STORAGE_KEYS.DTR, JSON.stringify(dtrEntries));
+    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
     closeModal('bulkDtrModal');
     loadDTR();
+    loadEmployees();
     updateDashboard();
 
-    const parts = [];
-    if (added) parts.push(`${added} added`);
-    if (updated) parts.push(`${updated} updated`);
-    let msg = `DTR entries imported (${parts.join(', ')}).`;
-    if (unmatchedNames.length > 0) {
-        msg += ` Skipped unmatched: ${unmatchedNames.join(', ')}.`;
-    }
-    showToast(msg, unmatchedNames.length > 0 ? 'info' : 'success');
+    const summary = [`${importedEntries} day${importedEntries === 1 ? '' : 's'} imported`];
+    if (newEmployees) summary.push(`${newEmployees} new employee${newEmployees === 1 ? '' : 's'} added`);
+    if (skippedIncomplete) summary.push(`${skippedIncomplete} incomplete row${skippedIncomplete === 1 ? '' : 's'} skipped (need both Time In and Time Out)`);
+    showToast(summary.join(', ') + '.', 'success');
 }
 
-function timeToMinutes(hhmm) {
-    if (!hhmm) return null;
-    const [h, m] = hhmm.split(':').map(Number);
-    if (isNaN(h) || isNaN(m)) return null;
-    return h * 60 + m;
+// ============================================
+// Shared parsing / matching helpers
+// ============================================
+
+function splitDtrColumns(line) {
+    if (line.includes('\t')) return line.split('\t').map(c => c.trim());
+    // CSV: handle quoted commas
+    if (line.includes(',')) {
+        const cols = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (ch === '"') {
+                inQuotes = !inQuotes;
+            } else if (ch === ',' && !inQuotes) {
+                cols.push(current.trim());
+                current = '';
+            } else {
+                current += ch;
+            }
+        }
+        cols.push(current.trim());
+        return cols;
+    }
+    // Multiple spaces
+    return line.split(/\s{2,}/).map(c => c.trim()).filter(Boolean);
 }
 
 function matchEmployeeByName(raw) {
@@ -1310,6 +1285,47 @@ function matchEmployeeByName(raw) {
     return null;
 }
 
+function normalizeDate(value) {
+    if (!value) return '';
+    const v = value.trim();
+
+    // YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+
+    // MM/DD/YYYY or M/D/YYYY
+    let m = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (m) {
+        let month = parseInt(m[1], 10);
+        let day = parseInt(m[2], 10);
+        let year = parseInt(m[3], 10);
+        if (year < 100) year += 2000;
+        // If first part > 12, treat as DD/MM/YYYY
+        if (month > 12 && day <= 12) {
+            const tmp = month;
+            month = day;
+            day = tmp;
+        }
+        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+
+    // Excel serial date (e.g. 45901)
+    if (/^\d{5}$/.test(v)) {
+        const serial = parseInt(v, 10);
+        const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+        const date = new Date(excelEpoch.getTime() + serial * 86400000);
+        return date.toISOString().split('T')[0];
+    }
+
+    const parsed = new Date(v);
+    if (!isNaN(parsed.getTime())) {
+        const y = parsed.getFullYear();
+        const mo = String(parsed.getMonth() + 1).padStart(2, '0');
+        const d = String(parsed.getDate()).padStart(2, '0');
+        return `${y}-${mo}-${d}`;
+    }
+    return '';
+}
+
 function normalizeTime(value) {
     if (!value) return '';
     let v = value.trim().toLowerCase();
@@ -1337,29 +1353,12 @@ function normalizeTime(value) {
     return '';
 }
 
-function splitDtrColumns(line) {
-    if (line.includes('\t')) return line.split('\t').map(c => c.trim());
-    // CSV: handle quoted commas
-    if (line.includes(',')) {
-        const cols = [];
-        let current = '';
-        let inQuotes = false;
-        for (let i = 0; i < line.length; i++) {
-            const ch = line[i];
-            if (ch === '"') {
-                inQuotes = !inQuotes;
-            } else if (ch === ',' && !inQuotes) {
-                cols.push(current.trim());
-                current = '';
-            } else {
-                current += ch;
-            }
-        }
-        cols.push(current.trim());
-        return cols;
-    }
-    // Multiple spaces
-    return line.split(/\s{2,}/).map(c => c.trim()).filter(Boolean);
+function normalizeStatus(value) {
+    const v = (value || '').trim().toLowerCase().replace(/\s+/g, '_');
+    if (v === 'late') return 'late';
+    if (v === 'absent') return 'absent';
+    if (v === 'half_day' || v === 'halfday' || v === 'half-day' || v === 'half day') return 'half_day';
+    return 'present';
 }
 
 function escapeHtml(str) {
@@ -1402,11 +1401,91 @@ function calculateLateMinutes(timeIn) {
 
     const inTotal = inH * 60 + inM;
     const stdTotal = stdH * 60 + stdM;
-    const grace = settings.graceMinutes || 0;
 
-    const diff = inTotal - (stdTotal + grace);
-    if (diff <= 0) return 0;
-    return diff;
+    if (inTotal <= stdTotal) return 0;
+    return inTotal - stdTotal;
+}
+
+// ============================================
+// Attendance rule engine (used by the Paste DTR Data grid)
+// Applies the split AM/PM schedule, tiered late rules, OT-beyond-PM-out,
+// and the Sunday-all-OT rule configured in Settings.
+// ============================================
+function timeStrToMinutes(t) {
+    if (!t) return null;
+    const [h, m] = t.split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return null;
+    return h * 60 + m;
+}
+
+function computeDtrForDay(timeIn, timeOut, dateStr) {
+    if (!timeIn && !timeOut) return null;
+    if (!timeIn || !timeOut) {
+        return { status: 'absent', lateMinutes: 0, totalHours: 0, otHours: 0, isSunday: isSundayDate(dateStr), incomplete: true };
+    }
+
+    const isSunday = isSundayDate(dateStr);
+    const amIn = timeStrToMinutes(settings.scheduleAmIn || '08:00');
+    const amOut = timeStrToMinutes(settings.scheduleAmOut || '12:00');
+    const pmIn = timeStrToMinutes(settings.schedulePmIn || '13:00');
+    const pmOut = timeStrToMinutes(settings.schedulePmOut || '17:00');
+    let inMin = timeStrToMinutes(timeIn);
+    let outMin = timeStrToMinutes(timeOut);
+    if (inMin === null || outMin === null) return null;
+    if (outMin <= inMin) outMin += 24 * 60; // guard against overnight/typo entries
+
+    // Worked minutes, minus the AM-out -> PM-in lunch gap if the shift spans it
+    let workedMinutes = outMin - inMin;
+    const lunchGap = Math.max(0, pmIn - amOut);
+    if (lunchGap > 0 && inMin <= amOut && outMin >= pmIn) {
+        workedMinutes -= lunchGap;
+    }
+    workedMinutes = Math.max(0, workedMinutes);
+
+    let otMinutes = outMin > pmOut ? outMin - pmOut : 0;
+    let lateMinutes = inMin > amIn ? inMin - amIn : 0;
+    let status = 'present';
+
+    if (isSunday && settings.sundayAllOT) {
+        // Entire shift is paid at OT rate; late rules don't apply
+        lateMinutes = 0;
+        otMinutes = workedMinutes;
+        status = 'present';
+    } else {
+        const grace = settings.lateGraceEnd ?? 10;
+        const perMinEnd = settings.latePerMinuteEnd ?? 29;
+        const flat1hrEnd = settings.lateFlat1hrEnd ?? 59;
+        const flat2hrEnd = settings.lateFlat2hrEnd ?? 89;
+        const halfDayEnd = settings.lateHalfDayEnd ?? 149;
+
+        if (lateMinutes <= grace) {
+            status = 'present';
+        } else if (lateMinutes <= perMinEnd) {
+            status = 'late';
+        } else if (lateMinutes <= flat1hrEnd) {
+            status = 'late';
+        } else if (lateMinutes <= flat2hrEnd) {
+            status = 'late';
+        } else if (lateMinutes <= halfDayEnd) {
+            status = 'half_day';
+        } else {
+            status = 'absent';
+        }
+    }
+
+    return {
+        status,
+        lateMinutes,
+        totalHours: parseFloat((workedMinutes / 60).toFixed(2)),
+        otHours: parseFloat((otMinutes / 60).toFixed(2)),
+        isSunday
+    };
+}
+
+function isSundayDate(dateStr) {
+    if (!dateStr) return false;
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.getDay() === 0;
 }
 
 // ============================================
@@ -2224,9 +2303,7 @@ function renderRecentDTR() {
 
         const statusClass = dtr.status === 'present' ? 'badge-success' :
                           dtr.status === 'late' ? 'badge-warning' :
-                          dtr.status === 'absent' ? 'badge-danger' :
-                          dtr.status === 'half_day' ? 'badge-warning' :
-                          dtr.status === 'rest_day' ? 'badge-info' : 'badge-info';
+                          dtr.status === 'absent' ? 'badge-danger' : 'badge-info';
 
         const item = document.createElement('div');
         item.className = 'dtr-mini-item';
@@ -2234,7 +2311,7 @@ function renderRecentDTR() {
             <span class="dtr-date">${formatDate(dtr.date)}</span>
             <span class="dtr-name">${emp.firstName} ${emp.lastName}</span>
             <span class="dtr-time">${dtr.timeIn || '-'} - ${dtr.timeOut || '-'}</span>
-            <span class="dtr-status"><span class="badge ${statusClass}">${formatStatusLabel(dtr.status)}</span></span>
+            <span class="dtr-status"><span class="badge ${statusClass}">${capitalize(dtr.status)}</span></span>
         `;
         container.appendChild(item);
     });
@@ -2545,11 +2622,6 @@ function formatDateShort(dateStr) {
 function capitalize(str) {
     if (!str) return '';
     return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-function formatStatusLabel(status) {
-    if (!status) return '';
-    return status.split('_').map(w => capitalize(w)).join(' ');
 }
 
 // ============================================
