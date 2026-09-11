@@ -6,5 +6,5 @@
 //
 // supabase-config.js is gitignored - don't commit your real values.
 
-const SUPABASE_URL = 'https://ze-payroll.supabase.co';
+const SUPABASE_URL = 'https://khwjulrwgpgdraczzarj.supabase.co/rest/v1/';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtod2p1bHJ3Z3BnZHJhY3p6YXJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkxNDU1NDAsImV4cCI6MjEwNDcyMTU0MH0.wL-vQQiZeIaKAmnQoDrV0Ud6oSHoGDhNhNxJo1K01xk';
