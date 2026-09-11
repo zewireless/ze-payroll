@@ -191,7 +191,6 @@
                             <select id="dtrEmployeeFilter" class="form-control" onchange="loadDTR()">
                                 <option value="">All Employees</option>
                             </select>
-                            <input type="date" id="dtrDateFilter" class="form-control" onchange="loadDTR()">
                             <button class="btn btn-primary btn-sm" onclick="showDTRAddModal()">
                                 <i class="fas fa-plus"></i> Manual Entry
                             </button>
@@ -201,6 +200,27 @@
                         </div>
                     </div>
                     <div class="card-body">
+                        <div class="dtr-range-bar">
+                            <div class="dtr-range-dates">
+                                <div class="form-group">
+                                    <label class="text-muted">From</label>
+                                    <input type="date" id="dtrDateFrom" class="form-control" onchange="loadDTR()">
+                                </div>
+                                <div class="form-group">
+                                    <label class="text-muted">To</label>
+                                    <input type="date" id="dtrDateTo" class="form-control" onchange="loadDTR()">
+                                </div>
+                            </div>
+                            <div class="dtr-range-presets">
+                                <button class="btn btn-sm btn-outline" onclick="setDtrRangePreset('first-half')">1st Half (1-15)</button>
+                                <button class="btn btn-sm btn-outline" onclick="setDtrRangePreset('second-half')">2nd Half (16-End)</button>
+                                <button class="btn btn-sm btn-outline" onclick="setDtrRangePreset('full-month')">Full Month</button>
+                                <button class="btn btn-sm btn-outline" onclick="setDtrRangePreset('today')">Today</button>
+                            </div>
+                            <button class="btn btn-sm btn-primary dtr-export-btn" onclick="exportDtrRange()">
+                                <i class="fas fa-file-csv"></i> Export CSV
+                            </button>
+                        </div>
                         <div class="table-responsive">
                             <table class="table" id="dtrTable">
                                 <thead>

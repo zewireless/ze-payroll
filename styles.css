@@ -481,6 +481,50 @@ body {
     min-width: 150px;
 }
 
+/* DTR date-range bar */
+.dtr-range-bar {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.dtr-range-dates {
+    display: flex;
+    gap: 10px;
+}
+
+.dtr-range-dates .form-group {
+    margin-bottom: 0;
+}
+
+.dtr-range-dates input[type="date"] {
+    width: auto;
+}
+
+.dtr-range-presets {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.dtr-export-btn {
+    margin-left: auto;
+}
+
+@media (max-width: 768px) {
+    .dtr-range-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .dtr-export-btn {
+        margin-left: 0;
+    }
+}
+
 /* Tables */
 .table-responsive {
     overflow-x: auto;

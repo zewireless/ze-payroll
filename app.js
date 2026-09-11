@@ -97,9 +97,9 @@ async function initializeApp() {
     await loadDTR();
     loadPayroll();
     updateDashboard();
-    document.getElementById('dtrDateFilter').valueAsDate = new Date();
     document.getElementById('payrollMonthFilter').value = new Date().toISOString().slice(0, 7);
     document.getElementById('reportMonth').value = new Date().toISOString().slice(0, 7);
+    setDtrRangePreset('full-month');
     initializeQRScanner();
     setupRealtimeSync();
 }
@@ -726,7 +726,8 @@ async function loadDTR() {
     dtrEntries = (data || []).map(mapDtrFromDb);
 
     const employeeFilter = document.getElementById('dtrEmployeeFilter')?.value;
-    const dateFilter = document.getElementById('dtrDateFilter')?.value;
+    const dateFrom = document.getElementById('dtrDateFrom')?.value;
+    const dateTo = document.getElementById('dtrDateTo')?.value;
 
     let filtered = dtrEntries;
 
@@ -734,8 +735,11 @@ async function loadDTR() {
         filtered = filtered.filter(d => d.employeeId === employeeFilter);
     }
 
-    if (dateFilter) {
-        filtered = filtered.filter(d => d.date === dateFilter);
+    if (dateFrom) {
+        filtered = filtered.filter(d => d.date >= dateFrom);
+    }
+    if (dateTo) {
+        filtered = filtered.filter(d => d.date <= dateTo);
     }
 
     // Sort by date descending
@@ -789,11 +793,115 @@ async function loadDTR() {
     });
 }
 
+// ------------------------------------------------
+// DTR date-range presets & CSV export
+// ------------------------------------------------
+function setDtrRangePreset(preset) {
+    const fromInput = document.getElementById('dtrDateFrom');
+    const toInput = document.getElementById('dtrDateTo');
+    if (!fromInput || !toInput) return;
+
+    const today = new Date();
+
+    if (preset === 'today') {
+        const todayStr = today.toISOString().split('T')[0];
+        fromInput.value = todayStr;
+        toInput.value = todayStr;
+        loadDTR();
+        return;
+    }
+
+    // Base the month off whatever's currently in "From" (or "To"), so
+    // switching between 1st Half / 2nd Half / Full Month stays on the
+    // same month you're already looking at, instead of jumping to today.
+    const anchor = fromInput.value ? new Date(fromInput.value + 'T00:00:00') : today;
+    const year = anchor.getFullYear();
+    const month = anchor.getMonth(); // 0-indexed
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const pad = (n) => String(n).padStart(2, '0');
+    const iso = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+
+    if (preset === 'first-half') {
+        fromInput.value = iso(year, month, 1);
+        toInput.value = iso(year, month, 15);
+    } else if (preset === 'second-half') {
+        fromInput.value = iso(year, month, 16);
+        toInput.value = iso(year, month, lastDay);
+    } else if (preset === 'full-month') {
+        fromInput.value = iso(year, month, 1);
+        toInput.value = iso(year, month, lastDay);
+    }
+
+    loadDTR();
+}
+
+function csvEscape(value) {
+    const str = String(value ?? '');
+    if (/[",\n]/.test(str)) {
+        return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+}
+
+function exportDtrRange() {
+    const employeeFilter = document.getElementById('dtrEmployeeFilter')?.value;
+    const dateFrom = document.getElementById('dtrDateFrom')?.value;
+    const dateTo = document.getElementById('dtrDateTo')?.value;
+
+    let filtered = dtrEntries;
+    if (employeeFilter) filtered = filtered.filter(d => d.employeeId === employeeFilter);
+    if (dateFrom) filtered = filtered.filter(d => d.date >= dateFrom);
+    if (dateTo) filtered = filtered.filter(d => d.date <= dateTo);
+
+    if (filtered.length === 0) {
+        showToast('No DTR entries in this date range to export.', 'error');
+        return;
+    }
+
+    // Sort by employee, then date, so each employee's days read top to bottom
+    filtered = [...filtered].sort((a, b) => {
+        const empA = employees.find(e => e.id === a.employeeId);
+        const empB = employees.find(e => e.id === b.employeeId);
+        const nameA = empA ? `${empA.lastName} ${empA.firstName}` : a.employeeId;
+        const nameB = empB ? `${empB.lastName} ${empB.firstName}` : b.employeeId;
+        return nameA.localeCompare(nameB) || a.date.localeCompare(b.date);
+    });
+
+    const headers = ['Employee ID', 'Employee Name', 'Date', 'Time In', 'Time Out', 'Total Hours', 'OT Hours', 'Late (min)', 'Status'];
+    const lines = [headers.map(csvEscape).join(',')];
+
+    filtered.forEach(dtr => {
+        const emp = employees.find(e => e.id === dtr.employeeId);
+        lines.push([
+            dtr.employeeId,
+            emp ? `${emp.firstName} ${emp.lastName}` : '',
+            dtr.date,
+            dtr.timeIn || '',
+            dtr.timeOut || '',
+            (dtr.totalHours || 0).toFixed(2),
+            (dtr.otHours || 0).toFixed(2),
+            dtr.lateMinutes || 0,
+            capitalize(dtr.status)
+        ].map(csvEscape).join(','));
+    });
+
+    const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const rangeLabel = dateFrom && dateTo ? `${dateFrom}_to_${dateTo}` : 'all';
+    a.href = url;
+    a.download = `dtr-export-${rangeLabel}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    showToast(`Exported ${filtered.length} DTR entr${filtered.length === 1 ? 'y' : 'ies'} to CSV.`, 'success');
+}
+
 function showDTRAddModal() {
     document.getElementById('dtrEmployee').innerHTML = employees.filter(e => e.status === 'active').map(e =>
         `<option value="${e.id}">${e.firstName} ${e.lastName} (${e.id})</option>`
     ).join('');
-    document.getElementById('dtrDate').value = document.getElementById('dtrDateFilter').value || new Date().toISOString().split('T')[0];
+    document.getElementById('dtrDate').value = new Date().toISOString().split('T')[0];
     document.getElementById('dtrTimeIn').value = '';
     document.getElementById('dtrTimeOut').value = '';
     document.getElementById('dtrOTHours').value = '';
