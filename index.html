@@ -431,7 +431,7 @@
                             <div class="form-group">
                                 <label>Break Time (Minutes)</label>
                                 <input type="number" id="breakMinutes" class="form-control" placeholder="60" min="0" onchange="saveSettings()">
-                                <small class="text-muted">Used for manual single-entry DTR. The Paste DTR grid auto-deducts the AM/PM gap below.</small>
+                                <small class="text-muted">Fallback only, used if Time In/Time Out don't fully span the AM/PM lunch window below. Normally the lunch break is auto-deducted from the schedule - employees don't need to time in/out for lunch.</small>
                             </div>
                         </div>
                     </div>
@@ -798,7 +798,8 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label>OT Hours</label>
-                        <input type="number" id="dtrOTHours" class="form-control" placeholder="0.00" min="0" step="0.25">
+                        <input type="number" id="dtrOTHours" class="form-control" placeholder="Auto: beyond PM Time Out" min="0" step="0.25">
+                        <small class="text-muted">Leave blank to auto-calculate from Time Out vs. PM Time Out below.</small>
                     </div>
                     <div class="form-group">
                         <label>Late Minutes</label>

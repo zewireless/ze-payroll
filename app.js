@@ -1112,11 +1112,16 @@ async function saveDTR() {
         return;
     }
 
-    // Calculate total hours
+    // Calculate total hours (auto-deducts the AM/PM lunch break if the
+    // shift spans it - no separate lunch time in/out needed)
     let totalHours = 0;
     if (timeIn && timeOut) {
         totalHours = calculateWorkHours(timeIn, timeOut);
     }
+
+    // Auto-calculate OT hours (anything past PM Time Out) if not manually set
+    const calculatedOT = (timeIn && timeOut) ? calculateOTHours(timeIn, timeOut) : 0;
+    const finalOtHours = otHours || calculatedOT;
 
     // Auto-calculate late minutes if not manually set
     const calculatedLate = calculateLateMinutes(timeIn);
@@ -1128,7 +1133,7 @@ async function saveDTR() {
         time_in: timeIn || null,
         time_out: timeOut || null,
         total_hours: totalHours,
-        ot_hours: otHours,
+        ot_hours: finalOtHours,
         late_minutes: finalLateMinutes,
         status,
         source: 'manual'
@@ -1743,28 +1748,58 @@ function escapeHtml(str) {
         .replace(/"/g, '&quot;');
 }
 
+function timeStrToMinutes(t) {
+    if (!t) return null;
+    const [h, m] = t.split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return null;
+    return h * 60 + m;
+}
+
+// ============================================
+// Shared shift-hours engine
+// ------------------------------------------------
+// Employees only punch a single Time In (e.g. 8:00 AM) and a single Time
+// Out (e.g. 5:00 PM) - the lunch break (AM Time Out -> PM Time In,
+// e.g. 12:00-1:00) is deducted automatically whenever the shift spans it,
+// with no separate lunch time in/out needed. Anything worked past PM
+// Time Out is counted as overtime. This one function backs manual DTR
+// entry, QR scans, and the Paste DTR grid so all three agree.
+// ============================================
+function computeShiftMinutes(timeIn, timeOut) {
+    const amOut = timeStrToMinutes(settings.scheduleAmOut || '12:00');
+    const pmIn = timeStrToMinutes(settings.schedulePmIn || '13:00');
+    const pmOut = timeStrToMinutes(settings.schedulePmOut || '17:00');
+    let inMin = timeStrToMinutes(timeIn);
+    let outMin = timeStrToMinutes(timeOut);
+    if (inMin === null || outMin === null) return { workedMinutes: 0, otMinutes: 0 };
+    if (outMin <= inMin) outMin += 24 * 60; // guard against overnight/typo entries
+
+    // Worked minutes, minus the AM-out -> PM-in lunch gap if the shift spans it.
+    let workedMinutes = outMin - inMin;
+    const lunchGap = (amOut !== null && pmIn !== null) ? Math.max(0, pmIn - amOut) : 0;
+    const spansLunch = lunchGap > 0 && amOut !== null && pmIn !== null && inMin <= amOut && outMin >= pmIn;
+    if (spansLunch) {
+        workedMinutes -= lunchGap;
+    } else if (!lunchGap) {
+        // No AM/PM lunch window configured (or it's zero-length) - fall back
+        // to the flat break-minutes setting instead.
+        workedMinutes -= settings.breakMinutes || 0;
+    }
+    workedMinutes = Math.max(0, workedMinutes);
+
+    const otMinutes = (pmOut !== null && outMin > pmOut) ? outMin - pmOut : 0;
+
+    return { workedMinutes, otMinutes };
+}
+
 function calculateWorkHours(timeIn, timeOut) {
     if (!timeIn || !timeOut) return 0;
+    return computeShiftMinutes(timeIn, timeOut).workedMinutes / 60;
+}
 
-    const [inH, inM] = timeIn.split(':').map(Number);
-    const [outH, outM] = timeOut.split(':').map(Number);
-
-    let startMinutes = inH * 60 + inM;
-    let endMinutes = outH * 60 + outM;
-
-    // Handle overnight shift
-    if (endMinutes <= startMinutes) {
-        endMinutes += 24 * 60;
-    }
-
-    let workMinutes = endMinutes - startMinutes;
-
-    // Subtract break time
-    workMinutes -= settings.breakMinutes || 60;
-
-    if (workMinutes < 0) workMinutes = 0;
-
-    return workMinutes / 60;
+function calculateOTHours(timeIn, timeOut) {
+    if (!timeIn || !timeOut) return 0;
+    return computeShiftMinutes(timeIn, timeOut).otMinutes / 60;
 }
 
 function calculateLateMinutes(timeIn) {
@@ -1785,13 +1820,6 @@ function calculateLateMinutes(timeIn) {
 // Applies the split AM/PM schedule, tiered late rules, OT-beyond-PM-out,
 // and the Sunday-all-OT rule configured in Settings.
 // ============================================
-function timeStrToMinutes(t) {
-    if (!t) return null;
-    const [h, m] = t.split(':').map(Number);
-    if (isNaN(h) || isNaN(m)) return null;
-    return h * 60 + m;
-}
-
 function computeDtrForDay(timeIn, timeOut, dateStr) {
     if (!timeIn && !timeOut) return null;
     if (!timeIn || !timeOut) {
@@ -1800,24 +1828,14 @@ function computeDtrForDay(timeIn, timeOut, dateStr) {
 
     const isSunday = isSundayDate(dateStr);
     const amIn = timeStrToMinutes(settings.scheduleAmIn || '08:00');
-    const amOut = timeStrToMinutes(settings.scheduleAmOut || '12:00');
-    const pmIn = timeStrToMinutes(settings.schedulePmIn || '13:00');
-    const pmOut = timeStrToMinutes(settings.schedulePmOut || '17:00');
     let inMin = timeStrToMinutes(timeIn);
     let outMin = timeStrToMinutes(timeOut);
     if (inMin === null || outMin === null) return null;
     if (outMin <= inMin) outMin += 24 * 60; // guard against overnight/typo entries
 
-    // Worked minutes, minus the AM-out -> PM-in lunch gap if the shift spans it
-    let workedMinutes = outMin - inMin;
-    const lunchGap = Math.max(0, pmIn - amOut);
-    if (lunchGap > 0 && inMin <= amOut && outMin >= pmIn) {
-        workedMinutes -= lunchGap;
-    }
-    workedMinutes = Math.max(0, workedMinutes);
-
-    let otMinutes = outMin > pmOut ? outMin - pmOut : 0;
-    let lateMinutes = inMin > amIn ? inMin - amIn : 0;
+    const { workedMinutes, otMinutes: shiftOtMinutes } = computeShiftMinutes(timeIn, timeOut);
+    let otMinutes = shiftOtMinutes;
+    let lateMinutes = (amIn !== null && inMin > amIn) ? inMin - amIn : 0;
     let status = 'present';
 
     if (isSunday && settings.sundayAllOT) {
@@ -2524,6 +2542,7 @@ async function processQRScan(employee) {
     if (existingDTR) {
         // Time out
         const totalHours = calculateWorkHours(existingDTR.timeIn, timeStr);
+        const otHours = calculateOTHours(existingDTR.timeIn, timeStr);
         const lateMinutes = existingDTR.lateMinutes || calculateLateMinutes(existingDTR.timeIn);
         row = {
             employee_id: employee.id,
@@ -2531,7 +2550,7 @@ async function processQRScan(employee) {
             time_in: existingDTR.timeIn,
             time_out: timeStr,
             total_hours: totalHours,
-            ot_hours: existingDTR.otHours || 0,
+            ot_hours: otHours,
             late_minutes: lateMinutes,
             status: 'present',
             source: 'camera_scan'

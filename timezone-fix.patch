@@ -1,5 +1,5 @@
 diff --git a/app.js b/app.js
-index b87eeaf..f8a38d5 100644
+index b87eeaf..9c0baef 100644
 --- a/app.js
 +++ b/app.js
 @@ -97,11 +97,13 @@ async function initializeApp() {
@@ -262,7 +262,35 @@ index b87eeaf..f8a38d5 100644
      document.getElementById('dtrTimeIn').value = '';
      document.getElementById('dtrTimeOut').value = '';
      document.getElementById('dtrOTHours').value = '';
-@@ -1032,7 +1217,8 @@ function populatePasteDtrMonthOptions(selectedValue) {
+@@ -927,12 +1112,17 @@ async function saveDTR() {
+         return;
+     }
+ 
+-    // Calculate total hours
++    // Calculate total hours (auto-deducts the AM/PM lunch break if the
++    // shift spans it - no separate lunch time in/out needed)
+     let totalHours = 0;
+     if (timeIn && timeOut) {
+         totalHours = calculateWorkHours(timeIn, timeOut);
+     }
+ 
++    // Auto-calculate OT hours (anything past PM Time Out) if not manually set
++    const calculatedOT = (timeIn && timeOut) ? calculateOTHours(timeIn, timeOut) : 0;
++    const finalOtHours = otHours || calculatedOT;
++
+     // Auto-calculate late minutes if not manually set
+     const calculatedLate = calculateLateMinutes(timeIn);
+     const finalLateMinutes = lateMinutes || calculatedLate;
+@@ -943,7 +1133,7 @@ async function saveDTR() {
+         time_in: timeIn || null,
+         time_out: timeOut || null,
+         total_hours: totalHours,
+-        ot_hours: otHours,
++        ot_hours: finalOtHours,
+         late_minutes: finalLateMinutes,
+         status,
+         source: 'manual'
+@@ -1032,7 +1222,8 @@ function populatePasteDtrMonthOptions(selectedValue) {
      if (!select) return;
      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
                           'July', 'August', 'September', 'October', 'November', 'December'];
@@ -272,7 +300,7 @@ index b87eeaf..f8a38d5 100644
      const options = [];
      for (let offset = -6; offset <= 2; offset++) {
          const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-@@ -1309,7 +1495,7 @@ async function createEmployeeFromPasteName(rawName) {
+@@ -1309,7 +1500,7 @@ async function createEmployeeFromPasteName(rawName) {
          dailyRate: settings.defaultDailyRate || 400.00,
          hourlyRate: settings.defaultHourlyRate || 50.00,
          baseDailyPay: settings.baseDailyPay || 500.00,
@@ -281,7 +309,123 @@ index b87eeaf..f8a38d5 100644
          sssNumber: '', philhealthNumber: '', pagibigNumber: '', tin: '',
          status: 'active'
      };
-@@ -1690,9 +1876,9 @@ function loadPayroll() {
+@@ -1557,28 +1748,58 @@ function escapeHtml(str) {
+         .replace(/"/g, '&quot;');
+ }
+ 
+-function calculateWorkHours(timeIn, timeOut) {
+-    if (!timeIn || !timeOut) return 0;
+-
+-    const [inH, inM] = timeIn.split(':').map(Number);
+-    const [outH, outM] = timeOut.split(':').map(Number);
++function timeStrToMinutes(t) {
++    if (!t) return null;
++    const [h, m] = t.split(':').map(Number);
++    if (isNaN(h) || isNaN(m)) return null;
++    return h * 60 + m;
++}
+ 
+-    let startMinutes = inH * 60 + inM;
+-    let endMinutes = outH * 60 + outM;
++// ============================================
++// Shared shift-hours engine
++// ------------------------------------------------
++// Employees only punch a single Time In (e.g. 8:00 AM) and a single Time
++// Out (e.g. 5:00 PM) - the lunch break (AM Time Out -> PM Time In,
++// e.g. 12:00-1:00) is deducted automatically whenever the shift spans it,
++// with no separate lunch time in/out needed. Anything worked past PM
++// Time Out is counted as overtime. This one function backs manual DTR
++// entry, QR scans, and the Paste DTR grid so all three agree.
++// ============================================
++function computeShiftMinutes(timeIn, timeOut) {
++    const amOut = timeStrToMinutes(settings.scheduleAmOut || '12:00');
++    const pmIn = timeStrToMinutes(settings.schedulePmIn || '13:00');
++    const pmOut = timeStrToMinutes(settings.schedulePmOut || '17:00');
++    let inMin = timeStrToMinutes(timeIn);
++    let outMin = timeStrToMinutes(timeOut);
++    if (inMin === null || outMin === null) return { workedMinutes: 0, otMinutes: 0 };
++    if (outMin <= inMin) outMin += 24 * 60; // guard against overnight/typo entries
+ 
+-    // Handle overnight shift
+-    if (endMinutes <= startMinutes) {
+-        endMinutes += 24 * 60;
++    // Worked minutes, minus the AM-out -> PM-in lunch gap if the shift spans it.
++    let workedMinutes = outMin - inMin;
++    const lunchGap = (amOut !== null && pmIn !== null) ? Math.max(0, pmIn - amOut) : 0;
++    const spansLunch = lunchGap > 0 && amOut !== null && pmIn !== null && inMin <= amOut && outMin >= pmIn;
++    if (spansLunch) {
++        workedMinutes -= lunchGap;
++    } else if (!lunchGap) {
++        // No AM/PM lunch window configured (or it's zero-length) - fall back
++        // to the flat break-minutes setting instead.
++        workedMinutes -= settings.breakMinutes || 0;
+     }
++    workedMinutes = Math.max(0, workedMinutes);
+ 
+-    let workMinutes = endMinutes - startMinutes;
++    const otMinutes = (pmOut !== null && outMin > pmOut) ? outMin - pmOut : 0;
+ 
+-    // Subtract break time
+-    workMinutes -= settings.breakMinutes || 60;
++    return { workedMinutes, otMinutes };
++}
+ 
+-    if (workMinutes < 0) workMinutes = 0;
++function calculateWorkHours(timeIn, timeOut) {
++    if (!timeIn || !timeOut) return 0;
++    return computeShiftMinutes(timeIn, timeOut).workedMinutes / 60;
++}
+ 
+-    return workMinutes / 60;
++function calculateOTHours(timeIn, timeOut) {
++    if (!timeIn || !timeOut) return 0;
++    return computeShiftMinutes(timeIn, timeOut).otMinutes / 60;
+ }
+ 
+ function calculateLateMinutes(timeIn) {
+@@ -1599,13 +1820,6 @@ function calculateLateMinutes(timeIn) {
+ // Applies the split AM/PM schedule, tiered late rules, OT-beyond-PM-out,
+ // and the Sunday-all-OT rule configured in Settings.
+ // ============================================
+-function timeStrToMinutes(t) {
+-    if (!t) return null;
+-    const [h, m] = t.split(':').map(Number);
+-    if (isNaN(h) || isNaN(m)) return null;
+-    return h * 60 + m;
+-}
+-
+ function computeDtrForDay(timeIn, timeOut, dateStr) {
+     if (!timeIn && !timeOut) return null;
+     if (!timeIn || !timeOut) {
+@@ -1614,24 +1828,14 @@ function computeDtrForDay(timeIn, timeOut, dateStr) {
+ 
+     const isSunday = isSundayDate(dateStr);
+     const amIn = timeStrToMinutes(settings.scheduleAmIn || '08:00');
+-    const amOut = timeStrToMinutes(settings.scheduleAmOut || '12:00');
+-    const pmIn = timeStrToMinutes(settings.schedulePmIn || '13:00');
+-    const pmOut = timeStrToMinutes(settings.schedulePmOut || '17:00');
+     let inMin = timeStrToMinutes(timeIn);
+     let outMin = timeStrToMinutes(timeOut);
+     if (inMin === null || outMin === null) return null;
+     if (outMin <= inMin) outMin += 24 * 60; // guard against overnight/typo entries
+ 
+-    // Worked minutes, minus the AM-out -> PM-in lunch gap if the shift spans it
+-    let workedMinutes = outMin - inMin;
+-    const lunchGap = Math.max(0, pmIn - amOut);
+-    if (lunchGap > 0 && inMin <= amOut && outMin >= pmIn) {
+-        workedMinutes -= lunchGap;
+-    }
+-    workedMinutes = Math.max(0, workedMinutes);
+-
+-    let otMinutes = outMin > pmOut ? outMin - pmOut : 0;
+-    let lateMinutes = inMin > amIn ? inMin - amIn : 0;
++    const { workedMinutes, otMinutes: shiftOtMinutes } = computeShiftMinutes(timeIn, timeOut);
++    let otMinutes = shiftOtMinutes;
++    let lateMinutes = (amIn !== null && inMin > amIn) ? inMin - amIn : 0;
+     let status = 'present';
+ 
+     if (isSunday && settings.sundayAllOT) {
+@@ -1690,9 +1894,9 @@ function loadPayroll() {
  
      if (!monthFilter) return;
  
@@ -294,7 +438,7 @@ index b87eeaf..f8a38d5 100644
  
      // Set globals for payslip generation
      startDateGlobal = startDate;
-@@ -1952,9 +2138,9 @@ function processPayroll() {
+@@ -1952,9 +2156,9 @@ function processPayroll() {
      loadPayroll();
  
      // Save processed payroll records
@@ -307,7 +451,7 @@ index b87eeaf..f8a38d5 100644
  
      const activeEmployees = employees.filter(e => e.status === 'active');
      const payrollRecords = [];
-@@ -1974,7 +2160,7 @@ function processPayroll() {
+@@ -1974,7 +2178,7 @@ function processPayroll() {
                  periodStart: startDate,
                  periodEnd: endDate,
                  ...payrollData,
@@ -316,7 +460,7 @@ index b87eeaf..f8a38d5 100644
              });
          }
      });
-@@ -2116,7 +2302,7 @@ function generatePayslip(employeeId, startDate, endDate) {
+@@ -2116,7 +2320,7 @@ function generatePayslip(employeeId, startDate, endDate) {
              </div>
  
              <div style="margin-top: 20px; text-align: center; font-size: 10px; color: #999;">
@@ -325,7 +469,7 @@ index b87eeaf..f8a38d5 100644
              </div>
          </div>
      `;
-@@ -2324,9 +2510,8 @@ function handleQRCode(data) {
+@@ -2324,9 +2528,8 @@ function handleQRCode(data) {
  async function processQRScan(employee) {
      if (!requireSupabase()) return;
  
@@ -337,7 +481,24 @@ index b87eeaf..f8a38d5 100644
  
      // Check if already scanned today for this employee
      const existingDTR = dtrEntries.find(d =>
-@@ -2391,7 +2576,7 @@ function updateQRScannerUI(employee) {
+@@ -2339,6 +2542,7 @@ async function processQRScan(employee) {
+     if (existingDTR) {
+         // Time out
+         const totalHours = calculateWorkHours(existingDTR.timeIn, timeStr);
++        const otHours = calculateOTHours(existingDTR.timeIn, timeStr);
+         const lateMinutes = existingDTR.lateMinutes || calculateLateMinutes(existingDTR.timeIn);
+         row = {
+             employee_id: employee.id,
+@@ -2346,7 +2550,7 @@ async function processQRScan(employee) {
+             time_in: existingDTR.timeIn,
+             time_out: timeStr,
+             total_hours: totalHours,
+-            ot_hours: existingDTR.otHours || 0,
++            ot_hours: otHours,
+             late_minutes: lateMinutes,
+             status: 'present',
+             source: 'camera_scan'
+@@ -2391,7 +2595,7 @@ function updateQRScannerUI(employee) {
      scannerArea.classList.add('hidden');
  
      document.getElementById('qrEmployeeName').textContent = `${employee.firstName} ${employee.lastName} (${employee.id})`;
@@ -346,7 +507,7 @@ index b87eeaf..f8a38d5 100644
  }
  
  function scanAnother() {
-@@ -2481,7 +2666,7 @@ function updateDashboard() {
+@@ -2481,7 +2685,7 @@ function updateDashboard() {
      document.getElementById('totalEmployees').textContent = activeEmployees;
  
      // Present today
@@ -355,7 +516,7 @@ index b87eeaf..f8a38d5 100644
      const todayDTR = dtrEntries.filter(d => d.date === today && (d.status === 'present' || d.status === 'late'));
      document.getElementById('presentToday').textContent = todayDTR.length;
  
-@@ -2490,7 +2675,8 @@ function updateDashboard() {
+@@ -2490,7 +2694,8 @@ function updateDashboard() {
      document.getElementById('lateToday').textContent = lateToday.length;
  
      // Total payroll (estimated for current month)
@@ -365,7 +526,7 @@ index b87eeaf..f8a38d5 100644
      const monthDTR = dtrEntries.filter(d => d.date >= monthStart);
      const totalPayroll = monthDTR.reduce((sum, d) => {
          const emp = employees.find(e => e.id === d.employeeId);
-@@ -2548,10 +2734,9 @@ function renderAttendanceChart() {
+@@ -2548,10 +2753,9 @@ function renderAttendanceChart() {
  
      // Get last 7 days
      const days = [];
@@ -378,7 +539,7 @@ index b87eeaf..f8a38d5 100644
      }
  
      const maxCount = Math.max(...days.map(date =>
-@@ -2584,9 +2769,9 @@ function generateReport() {
+@@ -2584,9 +2788,9 @@ function generateReport() {
          return;
      }
  
@@ -391,7 +552,7 @@ index b87eeaf..f8a38d5 100644
      const monthName = new Date(year, month - 1).toLocaleString('default', { month: 'long' });
  
      const container = document.getElementById('reportContent');
-@@ -2594,7 +2779,7 @@ function generateReport() {
+@@ -2594,7 +2798,7 @@ function generateReport() {
      let reportHTML = `
          <div class="report-header">
              <h2>Payroll Summary Report</h2>
@@ -400,7 +561,7 @@ index b87eeaf..f8a38d5 100644
          </div>
          <div class="report-summary">
      `;
-@@ -2768,14 +2953,14 @@ function exportData() {
+@@ -2768,14 +2972,14 @@ function exportData() {
          settings: settings,
          employees: employees,
          dtr: dtrEntries,
@@ -418,7 +579,7 @@ index b87eeaf..f8a38d5 100644
      a.click();
      document.body.removeChild(a);
 diff --git a/index.html b/index.html
-index a182ad5..1cf6c80 100644
+index a182ad5..c5a335e 100644
 --- a/index.html
 +++ b/index.html
 @@ -343,6 +343,51 @@
@@ -473,3 +634,22 @@ index a182ad5..1cf6c80 100644
                      <div class="card">
                          <div class="card-header">
                              <h3><i class="fas fa-clock"></i> Time Settings</h3>
+@@ -386,7 +431,7 @@
+                             <div class="form-group">
+                                 <label>Break Time (Minutes)</label>
+                                 <input type="number" id="breakMinutes" class="form-control" placeholder="60" min="0" onchange="saveSettings()">
+-                                <small class="text-muted">Used for manual single-entry DTR. The Paste DTR grid auto-deducts the AM/PM gap below.</small>
++                                <small class="text-muted">Fallback only, used if Time In/Time Out don't fully span the AM/PM lunch window below. Normally the lunch break is auto-deducted from the schedule - employees don't need to time in/out for lunch.</small>
+                             </div>
+                         </div>
+                     </div>
+@@ -753,7 +798,8 @@
+                 <div class="form-row">
+                     <div class="form-group">
+                         <label>OT Hours</label>
+-                        <input type="number" id="dtrOTHours" class="form-control" placeholder="0.00" min="0" step="0.25">
++                        <input type="number" id="dtrOTHours" class="form-control" placeholder="Auto: beyond PM Time Out" min="0" step="0.25">
++                        <small class="text-muted">Leave blank to auto-calculate from Time Out vs. PM Time Out below.</small>
+                     </div>
+                     <div class="form-group">
+                         <label>Late Minutes</label>
