@@ -2023,8 +2023,22 @@ function computeSSS(monthlySalary) {
 }
 
 function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
-    // Count days worked (present or half_day with full hours)
-    const daysWorked = dtrs.filter(d => d.status === 'present' || (d.status === 'half_day' && (d.totalHours || 0) >= 4)).length;
+    // Full days worked. 'late' still counts as a full day worked - the
+    // lateness itself is penalized separately below via lateDeduction.
+    // 'half_day' is counted separately below since it's paid at half rate.
+    const fullDaysWorked = dtrs.filter(d =>
+        d.status === 'present' || d.status === 'late'
+    ).length;
+
+    // Half days worked - only counts if the employee actually logged a
+    // substantial number of hours, and is paid at half the daily rate.
+    const halfDaysWorked = dtrs.filter(d =>
+        d.status === 'half_day' && (d.totalHours || 0) >= 4
+    ).length;
+
+    // Kept for anything downstream (OT cap, rendering, etc.) that expects
+    // a single "days worked" figure. Half days count as 0.5 for that purpose.
+    const daysWorked = fullDaysWorked + (halfDaysWorked * 0.5);
 
     // Calculate total hours
     const totalHours = dtrs.reduce((sum, d) => sum + (d.totalHours || 0), 0);
@@ -2039,8 +2053,8 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
     const hourlyRate = emp.hourlyRate || settings.defaultHourlyRate || (dailyRate / 8);
     const baseDailyPay = emp.baseDailyPay || settings.baseDailyPay || dailyRate;
 
-    // Regular pay = daily rate * days worked
-    const regularPay = dailyRate * daysWorked;
+    // Regular pay = daily rate * full days + half daily rate * half days
+    const regularPay = (dailyRate * fullDaysWorked) + (dailyRate * 0.5 * halfDaysWorked);
 
     // OT pay = hourly rate * 1.25 * OT hours (PH law: 125% for OT on regular days)
     const otRate = settings.otRate || (hourlyRate * 1.25);
@@ -2096,8 +2110,10 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
     // Net pay
     const netPay = grossPay - totalDeductions;
 
-    return {
+     return {
         daysWorked,
+        fullDaysWorked,
+        halfDaysWorked,
         totalHours,
         regularHours,
         otHours,
@@ -2252,12 +2268,20 @@ function generatePayslip(employeeId, startDate, endDate) {
                         <th style="text-align: right; padding: 6px; border: 1px solid #ddd;">Rate</th>
                         <th style="text-align: right; padding: 6px; border: 1px solid #ddd;">Amount</th>
                     </tr>
-                    <tr>
-                        <td style="padding: 6px; border: 1px solid #ddd;">Basic Pay (${payrollData.daysWorked} days)</td>
-                        <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">${payrollData.daysWorked}</td>
+                              <tr>
+                        <td style="padding: 6px; border: 1px solid #ddd;">Basic Pay (${payrollData.fullDaysWorked} full ${payrollData.fullDaysWorked === 1 ? 'day' : 'days'})</td>
+                        <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">${payrollData.fullDaysWorked}</td>
                         <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.dailyRate)}</td>
-                        <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.regularPay)}</td>
+                        <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.dailyRate * payrollData.fullDaysWorked)}</td>
                     </tr>
+                    ${payrollData.halfDaysWorked > 0 ? `
+                    <tr>
+                        <td style="padding: 6px; border: 1px solid #ddd;">Half-Day Pay (${payrollData.halfDaysWorked} half ${payrollData.halfDaysWorked === 1 ? 'day' : 'days'})</td>
+                        <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">${payrollData.halfDaysWorked}</td>
+                        <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.dailyRate * 0.5)}</td>
+                        <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.dailyRate * 0.5 * payrollData.halfDaysWorked)}</td>
+                    </tr>
+                    ` : ''}
                     ${payrollData.otHours > 0 ? `
                     <tr>
                         <td style="padding: 6px; border: 1px solid #ddd;">Overtime Pay</td>
