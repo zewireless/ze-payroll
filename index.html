@@ -769,6 +769,54 @@
         </div>
     </div>
 
+    <!-- Payroll Deductions Modal -->
+    <div class="modal hidden" id="payrollDeductionsModal">
+        <div class="modal-overlay" onclick="closeModal('payrollDeductionsModal')"></div>
+        <div class="modal-content" style="max-width: 640px;">
+            <div class="modal-header">
+                <h3>Edit Deductions</h3>
+                <button class="btn-close" onclick="closeModal('payrollDeductionsModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="deductionsEmployeeId">
+                <input type="hidden" id="deductionsPeriodStart">
+                <input type="hidden" id="deductionsPeriodEnd">
+                <p class="text-muted" id="deductionsEmployeeLabel" style="margin-top: -8px;"></p>
+
+                <h5 class="mt-2 deductions-statutory-field">Statutory Deductions</h5>
+                <small class="text-muted deductions-statutory-field">Leave a field blank to use the auto-computed amount for this period. Enter 0 to waive it.</small>
+                <div class="form-row mt-1">
+                    <div class="form-group deductions-statutory-field">
+                        <label>SSS (₱)</label>
+                        <input type="number" id="sssOverrideInput" class="form-control" placeholder="Auto" min="0" step="0.01">
+                        <small class="text-muted" id="sssAutoHint"></small>
+                    </div>
+                    <div class="form-group deductions-statutory-field">
+                        <label>PhilHealth (₱)</label>
+                        <input type="number" id="philhealthOverrideInput" class="form-control" placeholder="Auto" min="0" step="0.01">
+                        <small class="text-muted" id="philhealthAutoHint"></small>
+                    </div>
+                    <div class="form-group deductions-statutory-field">
+                        <label>Pag-IBIG (₱)</label>
+                        <input type="number" id="pagibigOverrideInput" class="form-control" placeholder="Auto" min="0" step="0.01">
+                        <small class="text-muted" id="pagibigAutoHint"></small>
+                    </div>
+                </div>
+
+                <h5 class="mt-3">Other Deductions</h5>
+                <small class="text-muted">Cash advance, loan repayment, uniform, equipment, or anything else specific to this pay period.</small>
+                <div id="otherDeductionsList" class="mt-1"></div>
+                <button type="button" class="btn btn-outline btn-sm mt-1" onclick="addOtherDeductionRow()">
+                    <i class="fas fa-plus"></i> Add Deduction
+                </button>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('payrollDeductionsModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveDeductionsAdjustment()">Save</button>
+            </div>
+        </div>
+    </div>
+
     <!-- DTR Add Modal -->
     <div class="modal hidden" id="dtrModal">
         <div class="modal-overlay" onclick="closeModal('dtrModal')"></div>

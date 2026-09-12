@@ -149,7 +149,8 @@ const STORAGE_KEYS = {
     EMPLOYEES: 'payroll_employees',
     DTR: 'payroll_dtr',
     PAYROLL: 'payroll_processed',
-    COMPANY: 'payroll_company'
+    COMPANY: 'payroll_company',
+    PAYROLL_ADJUSTMENTS: 'payroll_adjustments'
 };
 
 // Default company settings
@@ -2022,7 +2023,50 @@ function computeSSS(monthlySalary) {
     return { ee: 1350, er: 3150 };
 }
 
+// ============================================
+// Payroll Deduction Adjustments
+// (per employee, per pay period - lets you waive/override statutory
+// deductions and add ad-hoc deductions like cash advances or loans)
+// ============================================
+
+function getAdjustmentKey(employeeId, startDate, endDate) {
+    return `${employeeId}|${startDate}|${endDate}`;
+}
+
+function loadAllPayrollAdjustments() {
+    try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEYS.PAYROLL_ADJUSTMENTS) || '{}');
+    } catch {
+        return {};
+    }
+}
+
+function getPayrollAdjustment(employeeId, startDate, endDate) {
+    const all = loadAllPayrollAdjustments();
+    const key = getAdjustmentKey(employeeId, startDate, endDate);
+    return all[key] || { sssOverride: null, philhealthOverride: null, pagibigOverride: null, otherDeductions: [] };
+}
+
+function savePayrollAdjustment(employeeId, startDate, endDate, adjustment) {
+    const all = loadAllPayrollAdjustments();
+    const key = getAdjustmentKey(employeeId, startDate, endDate);
+
+    const isEmpty = (adjustment.sssOverride === null || adjustment.sssOverride === undefined) &&
+        (adjustment.philhealthOverride === null || adjustment.philhealthOverride === undefined) &&
+        (adjustment.pagibigOverride === null || adjustment.pagibigOverride === undefined) &&
+        (!adjustment.otherDeductions || adjustment.otherDeductions.length === 0);
+
+    if (isEmpty) {
+        delete all[key];
+    } else {
+        all[key] = adjustment;
+    }
+    localStorage.setItem(STORAGE_KEYS.PAYROLL_ADJUSTMENTS, JSON.stringify(all));
+}
+
 function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
+    const adjustment = getPayrollAdjustment(emp.id, startDate, endDate);
+
     // Full days worked. 'late' still counts as a full day worked - the
     // lateness itself is penalized separately below via lateDeduction.
     // 'half_day' is counted separately below since it's paid at half rate.
@@ -2083,6 +2127,7 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
     const enableStatutory = settings.enableStatutoryDeductions !== false;
 
     let sssDeduction = 0, philhealthDeduction = 0, pagibigDeduction = 0;
+    let sssAuto = 0, philhealthAuto = 0, pagibigAuto = 0;
     let sssER = 0, philhealthER = 0, pagibigER = 0;
     let statutoryDeductions = 0;
 
@@ -2090,27 +2135,43 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
         // Monthly salary estimate for statutory deductions
         const monthlySalaryEstimate = grossPay * (30 / Math.max(daysWorked, 1));
 
-        // Statutory deductions (Employee share)
+        // Statutory deductions (Employee share) - auto-computed baseline
         const sss = computeSSS(monthlySalaryEstimate);
         const philhealth = computePhilHealth(monthlySalaryEstimate);
         const pagibig = computePagibig(monthlySalaryEstimate);
 
-        sssDeduction = sss.ee;
-        philhealthDeduction = philhealth.ee;
-        pagibigDeduction = pagibig.ee;
+        sssAuto = sss.ee;
+        philhealthAuto = philhealth.ee;
+        pagibigAuto = pagibig.ee;
         sssER = sss.er;
         philhealthER = philhealth.er;
         pagibigER = pagibig.er;
 
+        // Apply per-employee, per-period manual overrides if set (e.g. to
+        // waive a deduction or correct the computed amount). null/undefined
+        // means "use the auto-computed value".
+        sssDeduction = (adjustment.sssOverride !== null && adjustment.sssOverride !== undefined) ? adjustment.sssOverride : sssAuto;
+        philhealthDeduction = (adjustment.philhealthOverride !== null && adjustment.philhealthOverride !== undefined) ? adjustment.philhealthOverride : philhealthAuto;
+        pagibigDeduction = (adjustment.pagibigOverride !== null && adjustment.pagibigOverride !== undefined) ? adjustment.pagibigOverride : pagibigAuto;
+
         statutoryDeductions = sssDeduction + philhealthDeduction + pagibigDeduction;
     }
 
-    const totalDeductions = lateDeduction + statutoryDeductions;
+    // Other manual deductions for this period (cash advance, loan, etc.)
+    const otherDeductions = adjustment.otherDeductions || [];
+    const otherDeductionsTotal = otherDeductions.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+
+    const isAdjusted = (adjustment.sssOverride !== null && adjustment.sssOverride !== undefined) ||
+        (adjustment.philhealthOverride !== null && adjustment.philhealthOverride !== undefined) ||
+        (adjustment.pagibigOverride !== null && adjustment.pagibigOverride !== undefined) ||
+        otherDeductions.length > 0;
+
+    const totalDeductions = lateDeduction + statutoryDeductions + otherDeductionsTotal;
 
     // Net pay
     const netPay = grossPay - totalDeductions;
 
-     return {
+    return {
         daysWorked,
         fullDaysWorked,
         halfDaysWorked,
@@ -2127,6 +2188,12 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
         sssDeduction,
         philhealthDeduction,
         pagibigDeduction,
+        sssAuto,
+        philhealthAuto,
+        pagibigAuto,
+        otherDeductions,
+        otherDeductionsTotal,
+        isAdjusted,
         statutoryDeductions,
         totalDeductions,
         grossPay,
@@ -2147,7 +2214,15 @@ function renderPayrollRow(tbody, emp, data) {
             <small>SSS: ₱${formatNumber(data.sssDeduction)}</small><br>
             <small>PHIC: ₱${formatNumber(data.philhealthDeduction)}</small><br>
             <small>Pag-IBIG: ₱${formatNumber(data.pagibigDeduction)}</small>
-        </td>` : '';
+            ${data.otherDeductions.length > 0 ? `<br>` + data.otherDeductions.map(d =>
+                `<small>${(d.label || 'Other')}: ₱${formatNumber(parseFloat(d.amount) || 0)}</small>`
+            ).join('<br>') : ''}
+        </td>` : (data.otherDeductions.length > 0 ? `
+        <td style="color: var(--danger);">
+            ${data.otherDeductions.map(d =>
+                `<small>${(d.label || 'Other')}: ₱${formatNumber(parseFloat(d.amount) || 0)}</small>`
+            ).join('<br>')}
+        </td>` : '<td></td>');
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -2165,17 +2240,141 @@ function renderPayrollRow(tbody, emp, data) {
         <td><strong>₱${formatNumber(data.netPay)}</strong></td>
         <td>
             <span class="badge badge-success">Computed</span>
+            ${data.isAdjusted ? '<br><span class="badge badge-warning" style="margin-top:2px;" title="Deductions manually adjusted for this period">Adjusted</span>' : ''}
+            <br>
             <button class="btn btn-sm btn-outline mt-1" onclick="generatePayslip('${emp.id}', '${startDateGlobal}', '${endDateGlobal}')" style="margin-top:4px;">
                 <i class="fas fa-file-alt"></i> Payslip
+            </button>
+            <button class="btn btn-sm btn-outline mt-1" onclick="openDeductionsModal('${emp.id}')" style="margin-top:4px;">
+                <i class="fas fa-pen"></i> Deductions
             </button>
         </td>
     `;
     tbody.appendChild(tr);
 }
 
+
 // Global variables for payslip generation
 let startDateGlobal = '';
 let endDateGlobal = '';
+
+// ============================================
+// Payroll Deductions Modal
+// ============================================
+
+let currentOtherDeductions = [];
+
+function openDeductionsModal(employeeId) {
+    const emp = employees.find(e => e.id === employeeId);
+    if (!emp) return;
+
+    const startDate = startDateGlobal;
+    const endDate = endDateGlobal;
+    if (!startDate || !endDate) {
+        showToast('Select a payroll month first!', 'error');
+        return;
+    }
+
+    const empDTRs = dtrEntries.filter(d => d.employeeId === employeeId && d.date >= startDate && d.date <= endDate);
+    const data = computeEmployeePayroll(emp, empDTRs, startDate, endDate);
+    const adjustment = getPayrollAdjustment(employeeId, startDate, endDate);
+
+    document.getElementById('deductionsEmployeeId').value = employeeId;
+    document.getElementById('deductionsPeriodStart').value = startDate;
+    document.getElementById('deductionsPeriodEnd').value = endDate;
+    document.getElementById('deductionsEmployeeLabel').textContent =
+        `${emp.firstName} ${emp.lastName} - ${formatDate(startDate)} to ${formatDate(endDate)}`;
+
+    const enableStatutory = settings.enableStatutoryDeductions !== false;
+    document.querySelectorAll('.deductions-statutory-field').forEach(el => {
+        el.classList.toggle('hidden', !enableStatutory);
+    });
+
+    document.getElementById('sssOverrideInput').value =
+        (adjustment.sssOverride !== null && adjustment.sssOverride !== undefined) ? adjustment.sssOverride : '';
+    document.getElementById('philhealthOverrideInput').value =
+        (adjustment.philhealthOverride !== null && adjustment.philhealthOverride !== undefined) ? adjustment.philhealthOverride : '';
+    document.getElementById('pagibigOverrideInput').value =
+        (adjustment.pagibigOverride !== null && adjustment.pagibigOverride !== undefined) ? adjustment.pagibigOverride : '';
+
+    document.getElementById('sssAutoHint').textContent = `Auto-computed: ₱${formatNumber(data.sssAuto)}`;
+    document.getElementById('philhealthAutoHint').textContent = `Auto-computed: ₱${formatNumber(data.philhealthAuto)}`;
+    document.getElementById('pagibigAutoHint').textContent = `Auto-computed: ₱${formatNumber(data.pagibigAuto)}`;
+
+    currentOtherDeductions = (adjustment.otherDeductions || []).map(d => ({ ...d }));
+    renderOtherDeductionsList();
+
+    showModal('payrollDeductionsModal');
+}
+
+function renderOtherDeductionsList() {
+    const container = document.getElementById('otherDeductionsList');
+    if (!container) return;
+
+    if (currentOtherDeductions.length === 0) {
+        container.innerHTML = '<p class="text-muted" style="font-size:13px;">No additional deductions for this period.</p>';
+        return;
+    }
+
+    container.innerHTML = currentOtherDeductions.map((d, i) => `
+        <div class="form-row" style="align-items:flex-end;">
+            <div class="form-group" style="flex:2;">
+                <label>Label</label>
+                <input type="text" class="form-control" value="${(d.label || '').replace(/"/g, '&quot;')}" placeholder="e.g. Cash Advance" oninput="updateOtherDeduction(${i}, 'label', this.value)">
+            </div>
+            <div class="form-group" style="flex:1;">
+                <label>Amount (₱)</label>
+                <input type="number" class="form-control" value="${d.amount || 0}" min="0" step="0.01" oninput="updateOtherDeduction(${i}, 'amount', this.value)">
+            </div>
+            <div class="form-group" style="flex:0 0 auto;">
+                <button type="button" class="btn-icon" title="Remove" onclick="removeOtherDeductionRow(${i})" style="color: var(--danger);">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function addOtherDeductionRow() {
+    currentOtherDeductions.push({ label: '', amount: 0 });
+    renderOtherDeductionsList();
+}
+
+function updateOtherDeduction(index, field, value) {
+    if (!currentOtherDeductions[index]) return;
+    currentOtherDeductions[index][field] = field === 'amount' ? (parseFloat(value) || 0) : value;
+}
+
+function removeOtherDeductionRow(index) {
+    currentOtherDeductions.splice(index, 1);
+    renderOtherDeductionsList();
+}
+
+function saveDeductionsAdjustment() {
+    const employeeId = document.getElementById('deductionsEmployeeId').value;
+    const startDate = document.getElementById('deductionsPeriodStart').value;
+    const endDate = document.getElementById('deductionsPeriodEnd').value;
+
+    const parseOverride = (val) => {
+        if (val === '' || val === null || val === undefined) return null;
+        const num = parseFloat(val);
+        return isNaN(num) ? null : num;
+    };
+
+    const adjustment = {
+        sssOverride: parseOverride(document.getElementById('sssOverrideInput').value),
+        philhealthOverride: parseOverride(document.getElementById('philhealthOverrideInput').value),
+        pagibigOverride: parseOverride(document.getElementById('pagibigOverrideInput').value),
+        otherDeductions: currentOtherDeductions
+            .map(d => ({ label: (d.label || '').trim(), amount: parseFloat(d.amount) || 0 }))
+            .filter(d => d.label !== '' && d.amount !== 0)
+    };
+
+    savePayrollAdjustment(employeeId, startDate, endDate, adjustment);
+    closeModal('payrollDeductionsModal');
+    loadPayroll();
+    showToast('Deductions updated for this pay period.', 'success');
+}
 
 function processPayroll() {
     const monthFilter = document.getElementById('payrollMonthFilter')?.value;
@@ -2268,7 +2467,7 @@ function generatePayslip(employeeId, startDate, endDate) {
                         <th style="text-align: right; padding: 6px; border: 1px solid #ddd;">Rate</th>
                         <th style="text-align: right; padding: 6px; border: 1px solid #ddd;">Amount</th>
                     </tr>
-                              <tr>
+                    <tr>
                         <td style="padding: 6px; border: 1px solid #ddd;">Basic Pay (${payrollData.fullDaysWorked} full ${payrollData.fullDaysWorked === 1 ? 'day' : 'days'})</td>
                         <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">${payrollData.fullDaysWorked}</td>
                         <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.dailyRate)}</td>
@@ -2325,6 +2524,12 @@ function generatePayslip(employeeId, startDate, endDate) {
                         <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.pagibigDeduction)}</td>
                     </tr>
                     ` : ''}
+                    ${payrollData.otherDeductions.map(d => `
+                    <tr>
+                        <td style="padding: 6px; border: 1px solid #ddd;">${d.label}</td>
+                        <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(parseFloat(d.amount) || 0)}</td>
+                    </tr>
+                    `).join('')}
                     <tr style="font-weight: bold; background: #f9f9f9;">
                         <td style="padding: 8px; border: 1px solid #ddd;">TOTAL DEDUCTIONS</td>
                         <td style="text-align: right; padding: 8px; border: 1px solid #ddd;">₱${formatNumber(payrollData.totalDeductions)}</td>
