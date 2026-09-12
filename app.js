@@ -1998,10 +1998,6 @@ function isSundayDate(dateStr) {
 function loadPayroll() {
     const employeeFilter = document.getElementById('payrollEmployeeFilter')?.value;
     const monthFilter = document.getElementById('payrollMonthFilter')?.value;
-    const enableStatutory = settings.enableStatutoryDeductions !== false;
-    document.querySelectorAll('.statutory-col').forEach(el => {
-        el.classList.toggle('hidden', !enableStatutory);
-    });
 
     if (!monthFilter) return;
 
@@ -2327,20 +2323,23 @@ function renderPayrollRow(tbody, emp, data) {
     if (data.daysWorked === 0) return;
 
     const enableStatutory = settings.enableStatutoryDeductions !== false;
-    const statutoryCell = enableStatutory ? `
+
+    // Always emit exactly one <td> here, matching the "Deductions" <th> in
+    // the table header 1:1 - this column is never hidden anymore, which is
+    // what caused Total Deductions/Net Pay/Status to shift over by one.
+    const statutoryLines = enableStatutory ? [
+        `<small>SSS: ₱${formatNumber(data.sssDeduction)}</small>`,
+        `<small>PHIC: ₱${formatNumber(data.philhealthDeduction)}</small>`,
+        `<small>Pag-IBIG: ₱${formatNumber(data.pagibigDeduction)}</small>`
+    ] : [];
+    const otherLines = data.otherDeductions.map(d =>
+        `<small>${(d.label || 'Other')}: ₱${formatNumber(parseFloat(d.amount) || 0)}</small>`
+    );
+    const deductionLines = [...statutoryLines, ...otherLines];
+    const statutoryCell = `
         <td style="color: var(--danger);">
-            <small>SSS: ₱${formatNumber(data.sssDeduction)}</small><br>
-            <small>PHIC: ₱${formatNumber(data.philhealthDeduction)}</small><br>
-            <small>Pag-IBIG: ₱${formatNumber(data.pagibigDeduction)}</small>
-            ${data.otherDeductions.length > 0 ? `<br>` + data.otherDeductions.map(d =>
-                `<small>${(d.label || 'Other')}: ₱${formatNumber(parseFloat(d.amount) || 0)}</small>`
-            ).join('<br>') : ''}
-        </td>` : (data.otherDeductions.length > 0 ? `
-        <td style="color: var(--danger);">
-            ${data.otherDeductions.map(d =>
-                `<small>${(d.label || 'Other')}: ₱${formatNumber(parseFloat(d.amount) || 0)}</small>`
-            ).join('<br>')}
-        </td>` : '<td></td>');
+            ${deductionLines.length > 0 ? deductionLines.join('<br>') : '<small class="text-muted">—</small>'}
+        </td>`;
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
