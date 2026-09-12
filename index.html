@@ -512,6 +512,71 @@
                                 </div>
                                 <small class="text-muted">When disabled, payroll will only calculate regular pay, OT pay, and late deductions</small>
                             </div>
+
+                            <div class="form-group">
+                                <label>Statutory Deduction Overrides (applies to all employees)</label>
+                                <small class="text-muted">Auto-compute uses the standard PH contribution tables. Fixed sets one amount for everyone. Waived means nobody gets this deduction. A specific employee's amount can still be edited for a single pay period from the Payroll tab.</small>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="text-muted">SSS</label>
+                                    <select id="sssMode" class="form-control" onchange="updateStatutoryModeVisibility(); saveSettings();">
+                                        <option value="auto">Auto-compute</option>
+                                        <option value="fixed">Fixed amount</option>
+                                        <option value="waived">Waived (₱0)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group hidden" id="sssFixedAmountGroup">
+                                    <label class="text-muted">Fixed SSS Amount</label>
+                                    <div class="input-with-icon">
+                                        <span class="currency-symbol">₱</span>
+                                        <input type="number" id="sssFixedAmount" class="form-control" placeholder="0.00" min="0" step="0.01" onchange="saveSettings()">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="text-muted">PhilHealth</label>
+                                    <select id="philhealthMode" class="form-control" onchange="updateStatutoryModeVisibility(); saveSettings();">
+                                        <option value="auto">Auto-compute</option>
+                                        <option value="fixed">Fixed amount</option>
+                                        <option value="waived">Waived (₱0)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group hidden" id="philhealthFixedAmountGroup">
+                                    <label class="text-muted">Fixed PhilHealth Amount</label>
+                                    <div class="input-with-icon">
+                                        <span class="currency-symbol">₱</span>
+                                        <input type="number" id="philhealthFixedAmount" class="form-control" placeholder="0.00" min="0" step="0.01" onchange="saveSettings()">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="text-muted">Pag-IBIG</label>
+                                    <select id="pagibigMode" class="form-control" onchange="updateStatutoryModeVisibility(); saveSettings();">
+                                        <option value="auto">Auto-compute</option>
+                                        <option value="fixed">Fixed amount</option>
+                                        <option value="waived">Waived (₱0)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group hidden" id="pagibigFixedAmountGroup">
+                                    <label class="text-muted">Fixed Pag-IBIG Amount</label>
+                                    <div class="input-with-icon">
+                                        <span class="currency-symbol">₱</span>
+                                        <input type="number" id="pagibigFixedAmount" class="form-control" placeholder="0.00" min="0" step="0.01" onchange="saveSettings()">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-top: 16px;">
+                                <label>Standard Deductions (applies to all employees, every payroll run)</label>
+                                <small class="text-muted">E.g. a company loan program, uniform fee. For a one-off deduction on a single employee for a single period (cash advance, etc.), use the "Deductions" button on that employee's row in the Payroll tab instead.</small>
+                                <div id="globalDeductionsList" class="mt-1"></div>
+                                <button class="btn btn-sm btn-outline mt-1" onclick="addGlobalDeduction()">
+                                    <i class="fas fa-plus"></i> Add Standard Deduction
+                                </button>
+                            </div>
                             <div class="form-group">
                                 <label>Base Daily Pay (Per Day)</label>
                                 <div class="input-with-icon">
@@ -782,6 +847,7 @@
                 <input type="hidden" id="deductionsPeriodStart">
                 <input type="hidden" id="deductionsPeriodEnd">
                 <p class="text-muted" id="deductionsEmployeeLabel" style="margin-top: -8px;"></p>
+                <div class="alert alert-info hidden" id="globalDeductionsNote" style="font-size: 13px;"></div>
 
                 <h5 class="mt-2 deductions-statutory-field">Statutory Deductions</h5>
                 <small class="text-muted deductions-statutory-field">Leave a field blank to use the auto-computed amount for this period. Enter 0 to waive it.</small>

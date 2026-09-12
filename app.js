@@ -200,7 +200,22 @@ const defaultSettings = {
     defaultDailyRate: 400.00,
     defaultHourlyRate: 50.00,
     defaultPosition: 'Employee',
-    enableStatutoryDeductions: true
+    enableStatutoryDeductions: true,
+    // Global statutory deduction overrides - apply to ALL employees unless
+    // a specific employee/period has its own override set in the payroll
+    // "Edit Deductions" modal (which always wins over these).
+    // mode: 'auto' (computed from salary) | 'fixed' (use *FixedAmount) | 'waived' (0)
+    sssMode: 'auto',
+    sssFixedAmount: 0,
+    philhealthMode: 'auto',
+    philhealthFixedAmount: 0,
+    pagibigMode: 'auto',
+    pagibigFixedAmount: 0,
+    // Recurring deductions applied automatically to every employee, every
+    // payroll run (e.g. a company loan program, uniform fee). Per-employee
+    // one-off deductions (cash advance, etc.) are still added per period
+    // via the payroll "Edit Deductions" modal.
+    globalOtherDeductions: []
 };
 
 // Current settings
@@ -433,6 +448,16 @@ function loadSettings() {
     document.getElementById('defaultPosition').value = settings.defaultPosition || 'Employee';
     document.getElementById('enableStatutoryDeductions').checked = settings.enableStatutoryDeductions !== false;
 
+    // Statutory deduction override modes
+    document.getElementById('sssMode').value = settings.sssMode || 'auto';
+    document.getElementById('sssFixedAmount').value = settings.sssFixedAmount || 0;
+    document.getElementById('philhealthMode').value = settings.philhealthMode || 'auto';
+    document.getElementById('philhealthFixedAmount').value = settings.philhealthFixedAmount || 0;
+    document.getElementById('pagibigMode').value = settings.pagibigMode || 'auto';
+    document.getElementById('pagibigFixedAmount').value = settings.pagibigFixedAmount || 0;
+    updateStatutoryModeVisibility();
+    renderGlobalOtherDeductions();
+
     // Late type radio buttons
     document.querySelectorAll('input[name="lateType"]').forEach(radio => {
         radio.checked = radio.value === settings.lateType;
@@ -472,6 +497,25 @@ function saveSettings() {
     settings.defaultHourlyRate = parseFloat(document.getElementById('defaultHourlyRate').value) || 0;
     settings.defaultPosition = document.getElementById('defaultPosition').value;
     settings.enableStatutoryDeductions = document.getElementById('enableStatutoryDeductions').checked;
+
+    // Statutory deduction override modes (global defaults for all employees)
+    settings.sssMode = document.getElementById('sssMode').value;
+    settings.sssFixedAmount = parseFloat(document.getElementById('sssFixedAmount').value) || 0;
+    settings.philhealthMode = document.getElementById('philhealthMode').value;
+    settings.philhealthFixedAmount = parseFloat(document.getElementById('philhealthFixedAmount').value) || 0;
+    settings.pagibigMode = document.getElementById('pagibigMode').value;
+    settings.pagibigFixedAmount = parseFloat(document.getElementById('pagibigFixedAmount').value) || 0;
+
+    // Global recurring "other" deductions applied to every employee
+    const globalDeductions = [];
+    document.querySelectorAll('.global-deduction-item').forEach(item => {
+        const label = item.querySelector('.global-deduction-label').value.trim();
+        const amount = parseFloat(item.querySelector('.global-deduction-amount').value) || 0;
+        if (label && amount !== 0) {
+            globalDeductions.push({ label, amount });
+        }
+    });
+    settings.globalOtherDeductions = globalDeductions;
 
     // Save late ranges
     const ranges = [];
@@ -554,6 +598,51 @@ function addLateRange() {
 function removeLateRange(index) {
     settings.lateRanges.splice(index, 1);
     renderLateRanges();
+}
+
+// Shows/hides the "Fixed Amount" input next to each statutory deduction
+// depending on whether that deduction's mode is set to Auto/Fixed/Waived.
+function updateStatutoryModeVisibility() {
+    ['sss', 'philhealth', 'pagibig'].forEach(type => {
+        const mode = document.getElementById(`${type}Mode`).value;
+        document.getElementById(`${type}FixedAmountGroup`).classList.toggle('hidden', mode !== 'fixed');
+    });
+}
+
+function renderGlobalOtherDeductions() {
+    const container = document.getElementById('globalDeductionsList');
+    if (!container) return;
+    const list = settings.globalOtherDeductions || [];
+
+    if (list.length === 0) {
+        container.innerHTML = '<p class="text-muted" style="font-size: 13px;">No standard deductions - every employee is deducted only for late minutes and any statutory contributions above.</p>';
+        return;
+    }
+
+    container.innerHTML = list.map((d, index) => `
+        <div class="global-deduction-item" style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+            <input type="text" class="global-deduction-label form-control" placeholder="e.g. Uniform Fee" value="${(d.label || '').replace(/"/g, '&quot;')}" style="flex: 2;" onchange="saveSettings()">
+            <div class="input-with-icon" style="flex: 1;">
+                <span class="currency-symbol">₱</span>
+                <input type="number" class="global-deduction-amount form-control" placeholder="0.00" min="0" step="0.01" value="${d.amount || 0}" onchange="saveSettings()">
+            </div>
+            <button class="btn btn-sm btn-outline text-danger" onclick="removeGlobalDeduction(${index})">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
+function addGlobalDeduction() {
+    if (!settings.globalOtherDeductions) settings.globalOtherDeductions = [];
+    settings.globalOtherDeductions.push({ label: '', amount: 0 });
+    renderGlobalOtherDeductions();
+}
+
+function removeGlobalDeduction(index) {
+    settings.globalOtherDeductions.splice(index, 1);
+    renderGlobalOtherDeductions();
+    saveSettings();
 }
 
 // ============================================
@@ -2128,6 +2217,7 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
 
     let sssDeduction = 0, philhealthDeduction = 0, pagibigDeduction = 0;
     let sssAuto = 0, philhealthAuto = 0, pagibigAuto = 0;
+    let sssGlobalDefault = 0, philhealthGlobalDefault = 0, pagibigGlobalDefault = 0;
     let sssER = 0, philhealthER = 0, pagibigER = 0;
     let statutoryDeductions = 0;
 
@@ -2147,24 +2237,43 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
         philhealthER = philhealth.er;
         pagibigER = pagibig.er;
 
-        // Apply per-employee, per-period manual overrides if set (e.g. to
-        // waive a deduction or correct the computed amount). null/undefined
-        // means "use the auto-computed value".
-        sssDeduction = (adjustment.sssOverride !== null && adjustment.sssOverride !== undefined) ? adjustment.sssOverride : sssAuto;
-        philhealthDeduction = (adjustment.philhealthOverride !== null && adjustment.philhealthOverride !== undefined) ? adjustment.philhealthOverride : philhealthAuto;
-        pagibigDeduction = (adjustment.pagibigOverride !== null && adjustment.pagibigOverride !== undefined) ? adjustment.pagibigOverride : pagibigAuto;
+        // Global default per type, set in Settings > Pay Settings, applies
+        // to every employee: 'auto' uses the computed baseline above,
+        // 'fixed' uses a flat amount for everyone, 'waived' means nobody
+        // gets this deduction unless overridden per-employee below.
+        sssGlobalDefault = settings.sssMode === 'fixed' ? (settings.sssFixedAmount || 0)
+            : settings.sssMode === 'waived' ? 0
+            : sssAuto;
+        philhealthGlobalDefault = settings.philhealthMode === 'fixed' ? (settings.philhealthFixedAmount || 0)
+            : settings.philhealthMode === 'waived' ? 0
+            : philhealthAuto;
+        pagibigGlobalDefault = settings.pagibigMode === 'fixed' ? (settings.pagibigFixedAmount || 0)
+            : settings.pagibigMode === 'waived' ? 0
+            : pagibigAuto;
+
+        // A per-employee, per-period override (set via the payroll "Edit
+        // Deductions" modal) always wins over the global default above.
+        // null/undefined means "use the global default".
+        sssDeduction = (adjustment.sssOverride !== null && adjustment.sssOverride !== undefined) ? adjustment.sssOverride : sssGlobalDefault;
+        philhealthDeduction = (adjustment.philhealthOverride !== null && adjustment.philhealthOverride !== undefined) ? adjustment.philhealthOverride : philhealthGlobalDefault;
+        pagibigDeduction = (adjustment.pagibigOverride !== null && adjustment.pagibigOverride !== undefined) ? adjustment.pagibigOverride : pagibigGlobalDefault;
 
         statutoryDeductions = sssDeduction + philhealthDeduction + pagibigDeduction;
     }
 
-    // Other manual deductions for this period (cash advance, loan, etc.)
-    const otherDeductions = adjustment.otherDeductions || [];
+    // Other deductions: global recurring ones (Settings > Pay Settings,
+    // apply automatically to every employee every period) plus any
+    // one-off deductions added for this specific employee/period via the
+    // payroll "Edit Deductions" modal.
+    const globalOtherDeductions = (settings.globalOtherDeductions || []).map(d => ({ ...d, source: 'global' }));
+    const periodOtherDeductions = (adjustment.otherDeductions || []).map(d => ({ ...d, source: 'period' }));
+    const otherDeductions = [...globalOtherDeductions, ...periodOtherDeductions];
     const otherDeductionsTotal = otherDeductions.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
 
     const isAdjusted = (adjustment.sssOverride !== null && adjustment.sssOverride !== undefined) ||
         (adjustment.philhealthOverride !== null && adjustment.philhealthOverride !== undefined) ||
         (adjustment.pagibigOverride !== null && adjustment.pagibigOverride !== undefined) ||
-        otherDeductions.length > 0;
+        periodOtherDeductions.length > 0;
 
     const totalDeductions = lateDeduction + statutoryDeductions + otherDeductionsTotal;
 
@@ -2191,6 +2300,9 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
         sssAuto,
         philhealthAuto,
         pagibigAuto,
+        sssGlobalDefault,
+        philhealthGlobalDefault,
+        pagibigGlobalDefault,
         otherDeductions,
         otherDeductionsTotal,
         isAdjusted,
@@ -2297,12 +2409,23 @@ function openDeductionsModal(employeeId) {
     document.getElementById('pagibigOverrideInput').value =
         (adjustment.pagibigOverride !== null && adjustment.pagibigOverride !== undefined) ? adjustment.pagibigOverride : '';
 
-    document.getElementById('sssAutoHint').textContent = `Auto-computed: ₱${formatNumber(data.sssAuto)}`;
-    document.getElementById('philhealthAutoHint').textContent = `Auto-computed: ₱${formatNumber(data.philhealthAuto)}`;
-    document.getElementById('pagibigAutoHint').textContent = `Auto-computed: ₱${formatNumber(data.pagibigAuto)}`;
+    document.getElementById('sssAutoHint').textContent = `If left blank, uses: ₱${formatNumber(data.sssGlobalDefault)} (current global setting)`;
+    document.getElementById('philhealthAutoHint').textContent = `If left blank, uses: ₱${formatNumber(data.philhealthGlobalDefault)} (current global setting)`;
+    document.getElementById('pagibigAutoHint').textContent = `If left blank, uses: ₱${formatNumber(data.pagibigGlobalDefault)} (current global setting)`;
 
     currentOtherDeductions = (adjustment.otherDeductions || []).map(d => ({ ...d }));
     renderOtherDeductionsList();
+
+    const globalList = settings.globalOtherDeductions || [];
+    const globalNoteEl = document.getElementById('globalDeductionsNote');
+    if (globalList.length > 0) {
+        globalNoteEl.innerHTML = `<i class="fas fa-info-circle"></i> Standard deductions from Settings already apply to everyone: ` +
+            globalList.map(d => `${d.label} (₱${formatNumber(d.amount)})`).join(', ') +
+            `. Add anything below only if it's specific to this employee for this period.`;
+        globalNoteEl.classList.remove('hidden');
+    } else {
+        globalNoteEl.classList.add('hidden');
+    }
 
     showModal('payrollDeductionsModal');
 }
