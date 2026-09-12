@@ -723,7 +723,10 @@ function updateEmployeeFilters() {
 
 async function addEmployee() {
     document.getElementById('editEmployeeId').value = '';
-    document.getElementById('employeeId').value = 'Generating...';
+    const idInput = document.getElementById('employeeId');
+    idInput.readOnly = false;
+    idInput.value = 'Generating...';
+    document.getElementById('employeeIdHint').textContent = 'Auto-generated - you can edit it before saving.';
     document.getElementById('firstName').value = '';
     document.getElementById('middleName').value = '';
     document.getElementById('lastName').value = '';
@@ -754,7 +757,10 @@ function editEmployee(id) {
     if (!emp) return;
 
     document.getElementById('editEmployeeId').value = emp.id;
-    document.getElementById('employeeId').value = emp.id;
+    const idInput = document.getElementById('employeeId');
+    idInput.value = emp.id;
+    idInput.readOnly = true;
+    document.getElementById('employeeIdHint').textContent = "Can't be changed after creation - it's referenced by this employee's existing DTR records.";
     document.getElementById('firstName').value = emp.firstName || '';
     document.getElementById('middleName').value = emp.middleName || '';
     document.getElementById('lastName').value = emp.lastName || '';
@@ -815,7 +821,16 @@ async function saveEmployee() {
         return;
     }
 
-    const employeeId = editId || document.getElementById('employeeId').value;
+    const employeeId = (editId || document.getElementById('employeeId').value).trim();
+    if (!employeeId) {
+        showToast('Employee ID is required!', 'error');
+        return;
+    }
+    if (!editId && employees.some(e => e.id === employeeId)) {
+        showToast(`Employee ID "${employeeId}" is already in use - pick a different one.`, 'error');
+        return;
+    }
+
     const employeeObj = {
         id: employeeId, firstName, middleName, lastName, position, department,
         email, phone, address, dailyRate, hourlyRate, baseDailyPay, hireDate,

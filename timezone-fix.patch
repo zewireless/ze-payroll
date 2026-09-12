@@ -1,5 +1,5 @@
 diff --git a/app.js b/app.js
-index b87eeaf..9c0baef 100644
+index b87eeaf..b65067e 100644
 --- a/app.js
 +++ b/app.js
 @@ -97,11 +97,13 @@ async function initializeApp() {
@@ -223,7 +223,19 @@ index b87eeaf..9c0baef 100644
      document.getElementById('latePerMinute').value = settings.latePerMinute || 1.00;
      document.getElementById('otRate').value = settings.otRate || 100.00;
      document.getElementById('breakMinutes').value = settings.breakMinutes || 60;
-@@ -549,7 +735,7 @@ async function addEmployee() {
+@@ -537,7 +723,10 @@ function updateEmployeeFilters() {
+ 
+ async function addEmployee() {
+     document.getElementById('editEmployeeId').value = '';
+-    document.getElementById('employeeId').value = 'Generating...';
++    const idInput = document.getElementById('employeeId');
++    idInput.readOnly = false;
++    idInput.value = 'Generating...';
++    document.getElementById('employeeIdHint').textContent = 'Auto-generated - you can edit it before saving.';
+     document.getElementById('firstName').value = '';
+     document.getElementById('middleName').value = '';
+     document.getElementById('lastName').value = '';
+@@ -549,7 +738,7 @@ async function addEmployee() {
      document.getElementById('dailyRate').value = settings.defaultDailyRate || 400;
      document.getElementById('hourlyRate').value = settings.defaultHourlyRate || 50;
      document.getElementById('baseDailyPayInput').value = settings.baseDailyPay || 500;
@@ -232,7 +244,37 @@ index b87eeaf..9c0baef 100644
      document.getElementById('sssNumber').value = '';
      document.getElementById('philhealthNumber').value = '';
      document.getElementById('pagibigNumber').value = '';
-@@ -801,10 +987,9 @@ function setDtrRangePreset(preset) {
+@@ -568,7 +757,10 @@ function editEmployee(id) {
+     if (!emp) return;
+ 
+     document.getElementById('editEmployeeId').value = emp.id;
+-    document.getElementById('employeeId').value = emp.id;
++    const idInput = document.getElementById('employeeId');
++    idInput.value = emp.id;
++    idInput.readOnly = true;
++    document.getElementById('employeeIdHint').textContent = "Can't be changed after creation - it's referenced by this employee's existing DTR records.";
+     document.getElementById('firstName').value = emp.firstName || '';
+     document.getElementById('middleName').value = emp.middleName || '';
+     document.getElementById('lastName').value = emp.lastName || '';
+@@ -629,7 +821,16 @@ async function saveEmployee() {
+         return;
+     }
+ 
+-    const employeeId = editId || document.getElementById('employeeId').value;
++    const employeeId = (editId || document.getElementById('employeeId').value).trim();
++    if (!employeeId) {
++        showToast('Employee ID is required!', 'error');
++        return;
++    }
++    if (!editId && employees.some(e => e.id === employeeId)) {
++        showToast(`Employee ID "${employeeId}" is already in use - pick a different one.`, 'error');
++        return;
++    }
++
+     const employeeObj = {
+         id: employeeId, firstName, middleName, lastName, position, department,
+         email, phone, address, dailyRate, hourlyRate, baseDailyPay, hireDate,
+@@ -801,10 +1002,9 @@ function setDtrRangePreset(preset) {
      const toInput = document.getElementById('dtrDateTo');
      if (!fromInput || !toInput) return;
  
@@ -244,7 +286,7 @@ index b87eeaf..9c0baef 100644
          fromInput.value = todayStr;
          toInput.value = todayStr;
          loadDTR();
-@@ -814,7 +999,7 @@ function setDtrRangePreset(preset) {
+@@ -814,7 +1014,7 @@ function setDtrRangePreset(preset) {
      // Base the month off whatever's currently in "From" (or "To"), so
      // switching between 1st Half / 2nd Half / Full Month stays on the
      // same month you're already looking at, instead of jumping to today.
@@ -253,7 +295,7 @@ index b87eeaf..9c0baef 100644
      const year = anchor.getFullYear();
      const month = anchor.getMonth(); // 0-indexed
      const lastDay = new Date(year, month + 1, 0).getDate();
-@@ -901,7 +1086,7 @@ function showDTRAddModal() {
+@@ -901,7 +1101,7 @@ function showDTRAddModal() {
      document.getElementById('dtrEmployee').innerHTML = employees.filter(e => e.status === 'active').map(e =>
          `<option value="${e.id}">${e.firstName} ${e.lastName} (${e.id})</option>`
      ).join('');
@@ -262,7 +304,7 @@ index b87eeaf..9c0baef 100644
      document.getElementById('dtrTimeIn').value = '';
      document.getElementById('dtrTimeOut').value = '';
      document.getElementById('dtrOTHours').value = '';
-@@ -927,12 +1112,17 @@ async function saveDTR() {
+@@ -927,12 +1127,17 @@ async function saveDTR() {
          return;
      }
  
@@ -281,7 +323,7 @@ index b87eeaf..9c0baef 100644
      // Auto-calculate late minutes if not manually set
      const calculatedLate = calculateLateMinutes(timeIn);
      const finalLateMinutes = lateMinutes || calculatedLate;
-@@ -943,7 +1133,7 @@ async function saveDTR() {
+@@ -943,7 +1148,7 @@ async function saveDTR() {
          time_in: timeIn || null,
          time_out: timeOut || null,
          total_hours: totalHours,
@@ -290,7 +332,7 @@ index b87eeaf..9c0baef 100644
          late_minutes: finalLateMinutes,
          status,
          source: 'manual'
-@@ -1032,7 +1222,8 @@ function populatePasteDtrMonthOptions(selectedValue) {
+@@ -1032,7 +1237,8 @@ function populatePasteDtrMonthOptions(selectedValue) {
      if (!select) return;
      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
                           'July', 'August', 'September', 'October', 'November', 'December'];
@@ -300,7 +342,7 @@ index b87eeaf..9c0baef 100644
      const options = [];
      for (let offset = -6; offset <= 2; offset++) {
          const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-@@ -1309,7 +1500,7 @@ async function createEmployeeFromPasteName(rawName) {
+@@ -1309,7 +1515,7 @@ async function createEmployeeFromPasteName(rawName) {
          dailyRate: settings.defaultDailyRate || 400.00,
          hourlyRate: settings.defaultHourlyRate || 50.00,
          baseDailyPay: settings.baseDailyPay || 500.00,
@@ -309,7 +351,7 @@ index b87eeaf..9c0baef 100644
          sssNumber: '', philhealthNumber: '', pagibigNumber: '', tin: '',
          status: 'active'
      };
-@@ -1557,28 +1748,58 @@ function escapeHtml(str) {
+@@ -1557,28 +1763,58 @@ function escapeHtml(str) {
          .replace(/"/g, '&quot;');
  }
  
@@ -383,7 +425,7 @@ index b87eeaf..9c0baef 100644
  }
  
  function calculateLateMinutes(timeIn) {
-@@ -1599,13 +1820,6 @@ function calculateLateMinutes(timeIn) {
+@@ -1599,13 +1835,6 @@ function calculateLateMinutes(timeIn) {
  // Applies the split AM/PM schedule, tiered late rules, OT-beyond-PM-out,
  // and the Sunday-all-OT rule configured in Settings.
  // ============================================
@@ -397,7 +439,7 @@ index b87eeaf..9c0baef 100644
  function computeDtrForDay(timeIn, timeOut, dateStr) {
      if (!timeIn && !timeOut) return null;
      if (!timeIn || !timeOut) {
-@@ -1614,24 +1828,14 @@ function computeDtrForDay(timeIn, timeOut, dateStr) {
+@@ -1614,24 +1843,14 @@ function computeDtrForDay(timeIn, timeOut, dateStr) {
  
      const isSunday = isSundayDate(dateStr);
      const amIn = timeStrToMinutes(settings.scheduleAmIn || '08:00');
@@ -425,7 +467,7 @@ index b87eeaf..9c0baef 100644
      let status = 'present';
  
      if (isSunday && settings.sundayAllOT) {
-@@ -1690,9 +1894,9 @@ function loadPayroll() {
+@@ -1690,9 +1909,9 @@ function loadPayroll() {
  
      if (!monthFilter) return;
  
@@ -438,7 +480,7 @@ index b87eeaf..9c0baef 100644
  
      // Set globals for payslip generation
      startDateGlobal = startDate;
-@@ -1952,9 +2156,9 @@ function processPayroll() {
+@@ -1952,9 +2171,9 @@ function processPayroll() {
      loadPayroll();
  
      // Save processed payroll records
@@ -451,7 +493,7 @@ index b87eeaf..9c0baef 100644
  
      const activeEmployees = employees.filter(e => e.status === 'active');
      const payrollRecords = [];
-@@ -1974,7 +2178,7 @@ function processPayroll() {
+@@ -1974,7 +2193,7 @@ function processPayroll() {
                  periodStart: startDate,
                  periodEnd: endDate,
                  ...payrollData,
@@ -460,7 +502,7 @@ index b87eeaf..9c0baef 100644
              });
          }
      });
-@@ -2116,7 +2320,7 @@ function generatePayslip(employeeId, startDate, endDate) {
+@@ -2116,7 +2335,7 @@ function generatePayslip(employeeId, startDate, endDate) {
              </div>
  
              <div style="margin-top: 20px; text-align: center; font-size: 10px; color: #999;">
@@ -469,7 +511,7 @@ index b87eeaf..9c0baef 100644
              </div>
          </div>
      `;
-@@ -2324,9 +2528,8 @@ function handleQRCode(data) {
+@@ -2324,9 +2543,8 @@ function handleQRCode(data) {
  async function processQRScan(employee) {
      if (!requireSupabase()) return;
  
@@ -481,7 +523,7 @@ index b87eeaf..9c0baef 100644
  
      // Check if already scanned today for this employee
      const existingDTR = dtrEntries.find(d =>
-@@ -2339,6 +2542,7 @@ async function processQRScan(employee) {
+@@ -2339,6 +2557,7 @@ async function processQRScan(employee) {
      if (existingDTR) {
          // Time out
          const totalHours = calculateWorkHours(existingDTR.timeIn, timeStr);
@@ -489,7 +531,7 @@ index b87eeaf..9c0baef 100644
          const lateMinutes = existingDTR.lateMinutes || calculateLateMinutes(existingDTR.timeIn);
          row = {
              employee_id: employee.id,
-@@ -2346,7 +2550,7 @@ async function processQRScan(employee) {
+@@ -2346,7 +2565,7 @@ async function processQRScan(employee) {
              time_in: existingDTR.timeIn,
              time_out: timeStr,
              total_hours: totalHours,
@@ -498,7 +540,7 @@ index b87eeaf..9c0baef 100644
              late_minutes: lateMinutes,
              status: 'present',
              source: 'camera_scan'
-@@ -2391,7 +2595,7 @@ function updateQRScannerUI(employee) {
+@@ -2391,7 +2610,7 @@ function updateQRScannerUI(employee) {
      scannerArea.classList.add('hidden');
  
      document.getElementById('qrEmployeeName').textContent = `${employee.firstName} ${employee.lastName} (${employee.id})`;
@@ -507,7 +549,7 @@ index b87eeaf..9c0baef 100644
  }
  
  function scanAnother() {
-@@ -2481,7 +2685,7 @@ function updateDashboard() {
+@@ -2481,7 +2700,7 @@ function updateDashboard() {
      document.getElementById('totalEmployees').textContent = activeEmployees;
  
      // Present today
@@ -516,7 +558,7 @@ index b87eeaf..9c0baef 100644
      const todayDTR = dtrEntries.filter(d => d.date === today && (d.status === 'present' || d.status === 'late'));
      document.getElementById('presentToday').textContent = todayDTR.length;
  
-@@ -2490,7 +2694,8 @@ function updateDashboard() {
+@@ -2490,7 +2709,8 @@ function updateDashboard() {
      document.getElementById('lateToday').textContent = lateToday.length;
  
      // Total payroll (estimated for current month)
@@ -526,7 +568,7 @@ index b87eeaf..9c0baef 100644
      const monthDTR = dtrEntries.filter(d => d.date >= monthStart);
      const totalPayroll = monthDTR.reduce((sum, d) => {
          const emp = employees.find(e => e.id === d.employeeId);
-@@ -2548,10 +2753,9 @@ function renderAttendanceChart() {
+@@ -2548,10 +2768,9 @@ function renderAttendanceChart() {
  
      // Get last 7 days
      const days = [];
@@ -539,7 +581,7 @@ index b87eeaf..9c0baef 100644
      }
  
      const maxCount = Math.max(...days.map(date =>
-@@ -2584,9 +2788,9 @@ function generateReport() {
+@@ -2584,9 +2803,9 @@ function generateReport() {
          return;
      }
  
@@ -552,7 +594,7 @@ index b87eeaf..9c0baef 100644
      const monthName = new Date(year, month - 1).toLocaleString('default', { month: 'long' });
  
      const container = document.getElementById('reportContent');
-@@ -2594,7 +2798,7 @@ function generateReport() {
+@@ -2594,7 +2813,7 @@ function generateReport() {
      let reportHTML = `
          <div class="report-header">
              <h2>Payroll Summary Report</h2>
@@ -561,7 +603,7 @@ index b87eeaf..9c0baef 100644
          </div>
          <div class="report-summary">
      `;
-@@ -2768,14 +2972,14 @@ function exportData() {
+@@ -2768,14 +2987,14 @@ function exportData() {
          settings: settings,
          employees: employees,
          dtr: dtrEntries,
@@ -579,7 +621,7 @@ index b87eeaf..9c0baef 100644
      a.click();
      document.body.removeChild(a);
 diff --git a/index.html b/index.html
-index a182ad5..c5a335e 100644
+index a182ad5..85419af 100644
 --- a/index.html
 +++ b/index.html
 @@ -343,6 +343,51 @@
@@ -643,7 +685,17 @@ index a182ad5..c5a335e 100644
                              </div>
                          </div>
                      </div>
-@@ -753,7 +798,8 @@
+@@ -642,7 +687,8 @@
+                     </div>
+                     <div class="form-group">
+                         <label>Employee ID</label>
+-                        <input type="text" id="employeeId" class="form-control" placeholder="Auto-generated" readonly>
++                        <input type="text" id="employeeId" class="form-control" placeholder="Auto-generated">
++                        <small class="text-muted" id="employeeIdHint">Auto-generated - you can edit it before saving.</small>
+                     </div>
+                 </div>
+                 <div class="form-row">
+@@ -753,7 +799,8 @@
                  <div class="form-row">
                      <div class="form-group">
                          <label>OT Hours</label>
