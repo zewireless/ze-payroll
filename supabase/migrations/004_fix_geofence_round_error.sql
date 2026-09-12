@@ -1,52 +1,17 @@
 -- ============================================
--- ze-payroll: Attendance geofencing migration
--- Lets an admin restrict the self-service kiosk (scan.html) so an
--- employee can only time in/out from within a configured radius of the
--- office. Off by default (geofence_enabled = false) so existing
--- installs keep working unchanged until an admin turns it on from
--- Settings > Attendance Security (Geofencing).
+-- ze-payroll: fix a bug from 003_geofence_attendance.sql
+--
+-- Postgres has no round() overload for double precision - only for
+-- numeric. The geofence-rejection message called round(v_distance_m)
+-- where v_distance_m is double precision, which raises a real error
+-- ("function round(double precision) does not exist") every time an
+-- employee is outside the allowed radius - surfacing in the app as a
+-- generic "Something went wrong" instead of a clear "you're too far
+-- away" message.
 --
 -- Run this in the Supabase SQL Editor as the `postgres` role, after
--- 001_attendance_kiosk.sql and 002_fix_pgcrypto_schema.sql.
--- Idempotent: safe to re-run.
+-- 003_geofence_attendance.sql. Idempotent: safe to re-run.
 -- ============================================
-
--- ------------------------------------------------
--- payroll_settings: office location + geofence radius
--- ------------------------------------------------
-alter table public.payroll_settings
-    add column if not exists geofence_enabled boolean not null default false,
-    add column if not exists office_lat double precision,
-    add column if not exists office_lng double precision,
-    add column if not exists geofence_radius_m integer not null default 50;
-
--- ------------------------------------------------
--- Great-circle distance between two lat/lng points, in meters.
--- ------------------------------------------------
-create or replace function public.haversine_meters(
-    lat1 double precision, lng1 double precision,
-    lat2 double precision, lng2 double precision
-)
-returns double precision
-language sql
-immutable
-as $$
-    select 2 * 6371000 * asin(
-        sqrt(
-            sin(radians(lat2 - lat1) / 2) ^ 2 +
-            cos(radians(lat1)) * cos(radians(lat2)) *
-            sin(radians(lng2 - lng1) / 2) ^ 2
-        )
-    );
-$$;
-
--- ------------------------------------------------
--- record_attendance_punch: add geofence enforcement.
--- Drop the old 2-argument version first since adding parameters
--- creates a new overload rather than replacing it - leaving the old
--- one callable would let anyone bypass the location check entirely.
--- ------------------------------------------------
-drop function if exists public.record_attendance_punch(text, text);
 
 create or replace function public.record_attendance_punch(
     p_employee_id text,
@@ -124,6 +89,8 @@ begin
             return json_build_object(
                 'success', false,
                 'reason', 'geofence',
+                -- FIX: round() has no double-precision overload in Postgres -
+                -- cast to numeric first, or this line throws a real error.
                 'message', 'You must be at the office to log attendance. You appear to be about ' ||
                            round(v_distance_m::numeric)::text || 'm away.'
             );
@@ -222,7 +189,8 @@ begin
 end;
 $$;
 
--- Anyone (including anon, i.e. the kiosk page) may call this - the PIN
--- check and geofence check inside are what protect it, not the grant.
+-- Grants are unaffected by create-or-replace on the same signature, but
+-- re-asserting them here is harmless and keeps this migration
+-- self-contained.
 revoke all on function public.record_attendance_punch(text, text, double precision, double precision, double precision) from public;
 grant execute on function public.record_attendance_punch(text, text, double precision, double precision, double precision) to anon, authenticated;
