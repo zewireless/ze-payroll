@@ -2625,18 +2625,22 @@ async function processPayroll() {
             d.date >= startDate &&
             d.date <= endDate
         );
+        // Include every employee who has at least one DTR entry in this
+        // period, even if it computed to 0 paid days (e.g. marked
+        // Absent) - previously `daysWorked > 0` silently dropped these
+        // from the saved/processed record and the "N employees" toast,
+        // even though the on-screen Payroll table already showed them.
+        if (empDTRs.length === 0) return;
         const payrollData = computeEmployeePayroll(emp, empDTRs, startDate, endDate);
-        if (payrollData.daysWorked > 0) {
-            payrollRecords.push({
-                id: 'PR-' + Date.now() + '-' + emp.id,
-                employeeId: emp.id,
-                employeeName: `${emp.firstName} ${emp.lastName}`,
-                periodStart: startDate,
-                periodEnd: endDate,
-                ...payrollData,
-                generatedAt: getAppNow().toISOString()
-            });
-        }
+        payrollRecords.push({
+            id: 'PR-' + Date.now() + '-' + emp.id,
+            employeeId: emp.id,
+            employeeName: `${emp.firstName} ${emp.lastName}`,
+            periodStart: startDate,
+            periodEnd: endDate,
+            ...payrollData,
+            generatedAt: getAppNow().toISOString()
+        });
     });
 
     // Save to localStorage
