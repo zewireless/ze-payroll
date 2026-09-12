@@ -506,6 +506,9 @@
                             <h3><i class="fas fa-location-dot"></i> Attendance Security (Geofencing)</h3>
                         </div>
                         <div class="card-body">
+                            <div id="geofenceLiveStatus" class="geofence-status-banner geofence-status-off">
+                                <i class="fas fa-circle-notch fa-spin"></i> Checking live kiosk status...
+                            </div>
                             <div class="form-group">
                                 <div class="checkbox-label">
                                     <input type="checkbox" id="geofenceEnabled" onchange="saveSettings()">

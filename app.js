@@ -464,6 +464,7 @@ function loadSettings() {
     document.getElementById('officeLat').value = settings.officeLat ?? '';
     document.getElementById('officeLng').value = settings.officeLng ?? '';
     document.getElementById('geofenceRadiusM').value = settings.geofenceRadiusM || 50;
+    refreshGeofenceStatus();
     document.getElementById('baseDailyPay').value = settings.baseDailyPay || 500.00;
     document.getElementById('payrollCutoff').value = settings.payrollCutoff || '15';
     document.getElementById('payrollFrequency').value = settings.payrollFrequency || 'monthly';
@@ -516,18 +517,24 @@ function saveSettings() {
     settings.lateHalfDayEnd = parseInt(document.getElementById('lateHalfDayEnd').value) || 0;
     settings.sundayAllOT = document.getElementById('sundayAllOT').checked;
 
-    // Attendance geofencing
+    // Attendance geofencing. Store exactly what the admin selected here -
+    // do NOT silently revert it. "Enable" and "Capture Office Location"
+    // each independently trigger a full saveSettings() call, and this used
+    // to force-uncheck the box whenever it ran before a location existed -
+    // which meant the *other* action's later save would read the
+    // now-unchecked box and silently re-disable geofencing, with no
+    // lasting error. That is how this shipped disabled with no visible
+    // failure. Missing-location is instead surfaced as a persistent status
+    // banner (refreshGeofenceStatus) and enforced by refusing to sync
+    // geofence_enabled:true to Supabase without valid coordinates (see
+    // syncAttendanceSettingsToSupabase) - never by mutating the admin's
+    // on-screen choice.
     settings.geofenceEnabled = document.getElementById('geofenceEnabled').checked;
     const latVal = document.getElementById('officeLat').value;
     const lngVal = document.getElementById('officeLng').value;
     settings.officeLat = latVal !== '' ? parseFloat(latVal) : null;
     settings.officeLng = lngVal !== '' ? parseFloat(lngVal) : null;
     settings.geofenceRadiusM = parseInt(document.getElementById('geofenceRadiusM').value) || 50;
-    if (settings.geofenceEnabled && (settings.officeLat === null || settings.officeLng === null)) {
-        showToast('Capture the office location before enabling geofencing.', 'error');
-        settings.geofenceEnabled = false;
-        document.getElementById('geofenceEnabled').checked = false;
-    }
 
     // Keep legacy single time-in/out fields in sync with the AM start / PM end
     // so older calculation paths (manual DTR entry) stay consistent.
@@ -606,7 +613,22 @@ function saveSettings() {
 // sync, changes made here would only ever affect the admin dashboard's own
 // calculations, not actual kiosk punches.
 async function syncAttendanceSettingsToSupabase() {
-    if (!supabaseClient) return;
+    if (!supabaseClient) {
+        renderGeofenceStatus({ unreachable: true, reason: 'Not connected to Supabase.' });
+        return;
+    }
+
+    // Hard requirement, enforced here (not just trusted from the checkbox):
+    // geofence_enabled is only ever sent as true when we have two real,
+    // finite coordinates. This is the actual enforcement boundary - the
+    // kiosk RPC treats missing coordinates as "not enforced" too, but we
+    // don't rely on that alone; we simply never claim to be enabled
+    // without them.
+    const lat = settings.officeLat;
+    const lng = settings.officeLng;
+    const hasValidCoords = typeof lat === 'number' && Number.isFinite(lat) &&
+                            typeof lng === 'number' && Number.isFinite(lng);
+    const effectiveGeofenceEnabled = !!settings.geofenceEnabled && hasValidCoords;
 
     const { error } = await supabaseClient.from('payroll_settings').upsert({
         id: 1,
@@ -621,15 +643,87 @@ async function syncAttendanceSettingsToSupabase() {
         late_half_day_end: settings.lateHalfDayEnd,
         sunday_all_ot: settings.sundayAllOT,
         timezone: settings.timezone || DEFAULT_APP_TIMEZONE,
-        geofence_enabled: !!settings.geofenceEnabled,
-        office_lat: settings.geofenceEnabled ? settings.officeLat : null,
-        office_lng: settings.geofenceEnabled ? settings.officeLng : null,
+        geofence_enabled: effectiveGeofenceEnabled,
+        // Persist the last-known coordinates regardless of the enabled
+        // flag (not just while enabled) so toggling off and back on later
+        // doesn't silently lose them and require a re-capture.
+        office_lat: hasValidCoords ? lat : null,
+        office_lng: hasValidCoords ? lng : null,
         geofence_radius_m: settings.geofenceRadiusM || 50
     }, { onConflict: 'id' });
 
     if (error) {
         console.error('Failed to sync attendance settings to Supabase:', error);
         showToast('Saved locally, but failed to sync to the kiosk: ' + error.message, 'error');
+        renderGeofenceStatus({ unreachable: true, reason: error.message });
+        return;
+    }
+
+    if (settings.geofenceEnabled && !hasValidCoords) {
+        showToast('Geofencing is checked ON but no office location is on file yet - it will NOT be enforced until you capture one.', 'error');
+    }
+
+    // Always re-read back from the database after saving, rather than
+    // trusting our own local state, so the admin sees exactly what the
+    // kiosk will actually enforce on the very next punch.
+    await refreshGeofenceStatus();
+}
+
+// Reads the live payroll_settings row straight from Supabase and renders
+// the real, current kiosk-enforcement state - deliberately independent of
+// whatever this browser's local `settings` object believes, since that's
+// exactly the gap that let geofencing silently do nothing while the admin
+// believed it was configured.
+async function refreshGeofenceStatus() {
+    if (!supabaseClient) {
+        renderGeofenceStatus({ unreachable: true, reason: 'Not connected to Supabase.' });
+        return;
+    }
+
+    const { data, error } = await supabaseClient
+        .from('payroll_settings')
+        .select('geofence_enabled, office_lat, office_lng, geofence_radius_m')
+        .eq('id', 1)
+        .maybeSingle();
+
+    if (error || !data) {
+        renderGeofenceStatus({ unreachable: true, reason: error?.message || 'No response.' });
+        return;
+    }
+
+    renderGeofenceStatus({
+        unreachable: false,
+        enabled: !!data.geofence_enabled,
+        hasCoords: data.office_lat !== null && data.office_lng !== null,
+        lat: data.office_lat,
+        lng: data.office_lng,
+        radius: data.geofence_radius_m
+    });
+}
+
+function renderGeofenceStatus(state) {
+    const el = document.getElementById('geofenceLiveStatus');
+    if (!el) return;
+
+    if (state.unreachable) {
+        el.className = 'geofence-status-banner geofence-status-off';
+        el.innerHTML = `<i class="fas fa-triangle-exclamation"></i> Could not verify the kiosk's live status${state.reason ? ' (' + state.reason + ')' : ''}. Treat geofencing as NOT confirmed until this succeeds.`;
+        return;
+    }
+
+    const enforced = state.enabled && state.hasCoords;
+    if (enforced) {
+        el.className = 'geofence-status-banner geofence-status-on';
+        el.innerHTML = `<i class="fas fa-shield-halved"></i> <strong>Enforced right now</strong> on the kiosk - office at ${state.lat.toFixed(6)}, ${state.lng.toFixed(6)}, ${state.radius}m radius.`;
+    } else if (state.enabled && !state.hasCoords) {
+        // Shouldn't happen anymore given the sync guard above, but if the
+        // database somehow ends up in this state, say so plainly rather
+        // than implying it's protected.
+        el.className = 'geofence-status-banner geofence-status-off';
+        el.innerHTML = `<i class="fas fa-triangle-exclamation"></i> Marked enabled but has NO office location on file - it is NOT being enforced. Capture the office location and save.`;
+    } else {
+        el.className = 'geofence-status-banner geofence-status-off';
+        el.innerHTML = `<i class="fas fa-circle-info"></i> Not enforced - employees can time in/out from anywhere.`;
     }
 }
 

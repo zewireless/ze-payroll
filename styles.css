@@ -960,6 +960,31 @@ body {
     border: 1px solid #fcd34d;
 }
 
+/* Geofence live-status banner - deliberately distinct from the alert
+   styles above, since this reflects verified database state, not just a
+   static hint. Green only when Supabase confirms enforcement is active. */
+.geofence-status-banner {
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.geofence-status-banner.geofence-status-on {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
+}
+
+.geofence-status-banner.geofence-status-off {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+}
+
 /* Toast */
 .toast-container {
     position: fixed;
