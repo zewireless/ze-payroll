@@ -90,6 +90,29 @@ function toggleSidebar() {
     overlay?.classList.toggle('active');
 }
 
+// ------------------------------------------------
+// Dark / light theme
+// The <head> inline script already applies the saved (or OS-preferred)
+// theme before first paint, so this just keeps the toggle icon in sync
+// and handles switching + persisting the choice.
+// ------------------------------------------------
+function updateThemeToggleIcon() {
+    const icon = document.getElementById('themeToggleIcon');
+    if (!icon) return;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
+}
+
+function toggleTheme() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const next = isDark ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('ze_payroll_theme', next);
+    updateThemeToggleIcon();
+}
+
+document.addEventListener('DOMContentLoaded', updateThemeToggleIcon);
+
 // Initialize App
 async function initializeApp() {
     loadSettings();

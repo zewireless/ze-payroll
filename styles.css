@@ -28,6 +28,58 @@
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
     --radius: 8px;
     --radius-lg: 12px;
+
+    /* Theme-aware semantic tokens (light mode defaults) */
+    --bg-page: var(--gray-100);
+    --bg-surface: #ffffff;
+    --bg-surface-alt: var(--gray-50);
+    --bg-hover: var(--gray-100);
+    --bg-hover-strong: var(--gray-200);
+    --text-primary: var(--gray-900);
+    --text-body: var(--gray-800);
+    --text-secondary: var(--gray-700);
+    --text-tertiary: var(--gray-600);
+    --text-muted: var(--gray-500);
+    --text-faint: var(--gray-400);
+    --border-color: var(--gray-200);
+    --border-color-strong: var(--gray-300);
+    --border-hover: var(--gray-400);
+    --sunday-highlight: #fff7ed;
+}
+
+/* Dark mode overrides - only the semantic tokens change; the base
+   --gray-* palette stays fixed so permanently-dark surfaces like the
+   sidebar and QR scanner panel look the same in both themes. */
+[data-theme="dark"] {
+    --bg-page: #0b1220;
+    --bg-surface: #17202f;
+    --bg-surface-alt: #1c2536;
+    --bg-hover: #202a3d;
+    --bg-hover-strong: #2c3852;
+    --text-primary: #f1f5f9;
+    --text-body: #e2e8f0;
+    --text-secondary: #cbd5e1;
+    --text-tertiary: #b0bccd;
+    --text-muted: #94a3b8;
+    --text-faint: #7d8ba0;
+    --border-color: #2a3548;
+    --border-color-strong: #3f4a5f;
+    --border-hover: #4a5875;
+    --sunday-highlight: rgba(251, 146, 60, 0.1);
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+    --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.5);
+}
+
+body,
+.card,
+.stat-card,
+.modal-content,
+.toast,
+.btn,
+.form-control {
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
 * {
@@ -38,8 +90,8 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: var(--gray-100);
-    color: var(--gray-800);
+    background-color: var(--bg-page);
+    color: var(--text-body);
     line-height: 1.5;
     min-height: 100vh;
 }
@@ -156,7 +208,7 @@ body {
     flex: 1;
     margin-left: 260px;
     padding: 24px;
-    background-color: var(--gray-100);
+    background-color: var(--bg-page);
 }
 
 .top-bar {
@@ -168,12 +220,12 @@ body {
 
 .page-title h1 {
     font-size: 24px;
-    color: var(--gray-900);
+    color: var(--text-primary);
     font-weight: 600;
 }
 
 .page-title .text-muted {
-    color: var(--gray-500);
+    color: var(--text-muted);
     font-size: 14px;
 }
 
@@ -205,7 +257,7 @@ body {
     gap: 8px;
     cursor: pointer;
     font-size: 13px;
-    color: var(--gray-700);
+    color: var(--text-secondary);
 }
 
 .checkbox-label input[type="checkbox"] {
@@ -240,23 +292,23 @@ body {
 }
 
 .btn-secondary {
-    background: var(--gray-200);
-    color: var(--gray-700);
+    background: var(--bg-hover-strong);
+    color: var(--text-secondary);
 }
 
 .btn-secondary:hover {
-    background: var(--gray-300);
+    background: var(--border-color-strong);
 }
 
 .btn-outline {
     background: transparent;
-    color: var(--gray-700);
-    border: 1px solid var(--gray-300);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color-strong);
 }
 
 .btn-outline:hover {
-    background: var(--gray-100);
-    border-color: var(--gray-400);
+    background: var(--bg-hover);
+    border-color: var(--border-hover);
 }
 
 .btn-success {
@@ -277,7 +329,7 @@ body {
     background: none;
     border: none;
     font-size: 24px;
-    color: var(--gray-500);
+    color: var(--text-muted);
     cursor: pointer;
     padding: 0;
     line-height: 1;
@@ -296,7 +348,7 @@ body {
 
 /* Cards */
 .card {
-    background: white;
+    background: var(--bg-surface);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow);
     margin-bottom: 24px;
@@ -305,7 +357,7 @@ body {
 
 .card-header {
     padding: 16px 20px;
-    border-bottom: 1px solid var(--gray-200);
+    border-bottom: 1px solid var(--border-color);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -316,13 +368,13 @@ body {
 .card-header h3 {
     font-size: 16px;
     font-weight: 600;
-    color: var(--gray-900);
+    color: var(--text-primary);
 }
 
 .card-header h5 {
     font-size: 14px;
     font-weight: 600;
-    color: var(--gray-900);
+    color: var(--text-primary);
 }
 
 .card-body {
@@ -346,7 +398,7 @@ body {
 }
 
 .stat-card {
-    background: white;
+    background: var(--bg-surface);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow);
     padding: 20px;
@@ -393,12 +445,12 @@ body {
 .stat-value {
     font-size: 24px;
     font-weight: 700;
-    color: var(--gray-900);
+    color: var(--text-primary);
 }
 
 .stat-label {
     font-size: 13px;
-    color: var(--gray-500);
+    color: var(--text-muted);
 }
 
 /* Content Grid */
@@ -412,11 +464,12 @@ body {
 .form-control {
     width: 100%;
     padding: 10px 14px;
-    border: 1px solid var(--gray-300);
+    border: 1px solid var(--border-color-strong);
     border-radius: var(--radius);
     font-size: 14px;
     transition: border-color 0.2s ease;
-    background: white;
+    background: var(--bg-surface);
+    color: var(--text-body);
 }
 
 .form-control:focus {
@@ -433,7 +486,7 @@ body {
     display: block;
     font-size: 13px;
     font-weight: 500;
-    color: var(--gray-700);
+    color: var(--text-secondary);
     margin-bottom: 6px;
 }
 
@@ -452,7 +505,7 @@ body {
     left: 14px;
     top: 50%;
     transform: translateY(-50%);
-    color: var(--gray-500);
+    color: var(--text-muted);
     font-weight: 500;
 }
 
@@ -489,7 +542,7 @@ body {
     flex-wrap: wrap;
     margin-bottom: 16px;
     padding-bottom: 16px;
-    border-bottom: 1px solid var(--gray-200);
+    border-bottom: 1px solid var(--border-color);
 }
 
 .dtr-range-dates {
@@ -537,23 +590,23 @@ body {
 }
 
 .table th {
-    background: var(--gray-50);
+    background: var(--bg-surface-alt);
     padding: 12px 16px;
     text-align: left;
     font-weight: 600;
-    color: var(--gray-700);
-    border-bottom: 2px solid var(--gray-200);
+    color: var(--text-secondary);
+    border-bottom: 2px solid var(--border-color);
     white-space: nowrap;
 }
 
 .table td {
     padding: 12px 16px;
-    border-bottom: 1px solid var(--gray-200);
+    border-bottom: 1px solid var(--border-color);
     vertical-align: middle;
 }
 
 .table tbody tr:hover {
-    background: var(--gray-50);
+    background: var(--bg-surface-alt);
 }
 
 .table tbody tr:last-child td {
@@ -569,23 +622,23 @@ body {
     width: 32px;
     height: 32px;
     border: none;
-    background: var(--gray-100);
+    background: var(--bg-hover);
     border-radius: var(--radius);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--gray-600);
+    color: var(--text-tertiary);
     transition: all 0.2s ease;
 }
 
 .table .btn-icon:hover {
-    background: var(--gray-200);
-    color: var(--gray-900);
+    background: var(--bg-hover-strong);
+    color: var(--text-primary);
 }
 
 .text-muted {
-    color: var(--gray-500);
+    color: var(--text-muted);
 }
 
 .text-center {
@@ -634,8 +687,8 @@ body {
 }
 
 .badge-neutral {
-    background: var(--gray-100);
-    color: var(--gray-700);
+    background: var(--bg-hover);
+    color: var(--text-secondary);
 }
 
 /* DTR Mini List */
@@ -650,7 +703,7 @@ body {
     align-items: center;
     gap: 12px;
     padding: 8px 12px;
-    background: var(--gray-50);
+    background: var(--bg-surface-alt);
     border-radius: var(--radius);
     font-size: 13px;
 }
@@ -658,7 +711,7 @@ body {
 .dtr-mini-item .dtr-date {
     width: 80px;
     font-weight: 500;
-    color: var(--gray-700);
+    color: var(--text-secondary);
 }
 
 .dtr-mini-item .dtr-name {
@@ -667,7 +720,7 @@ body {
 }
 
 .dtr-mini-item .dtr-time {
-    color: var(--gray-600);
+    color: var(--text-tertiary);
 }
 
 .dtr-mini-item .dtr-status {
@@ -710,7 +763,7 @@ body {
     left: 50%;
     transform: translateX(-50%);
     font-size: 11px;
-    color: var(--gray-500);
+    color: var(--text-muted);
     white-space: nowrap;
 }
 
@@ -808,7 +861,7 @@ body {
 }
 
 .qr-result {
-    background: white;
+    background: var(--bg-surface);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     padding: 32px;
@@ -817,12 +870,12 @@ body {
 
 .qr-result-content h4 {
     font-size: 18px;
-    color: var(--gray-900);
+    color: var(--text-primary);
     margin: 8px 0 4px;
 }
 
 .qr-result-content p {
-    color: var(--gray-600);
+    color: var(--text-tertiary);
     font-size: 14px;
 }
 
@@ -833,7 +886,7 @@ body {
 }
 
 .qr-info-card {
-    background: white;
+    background: var(--bg-surface);
     border-radius: var(--radius);
     padding: 16px;
     text-align: left;
@@ -841,7 +894,7 @@ body {
 
 .qr-info-card h5 {
     font-size: 14px;
-    color: var(--gray-900);
+    color: var(--text-primary);
     margin-bottom: 8px;
     display: flex;
     align-items: center;
@@ -850,7 +903,7 @@ body {
 
 .qr-info-card p {
     font-size: 13px;
-    color: var(--gray-600);
+    color: var(--text-tertiary);
     margin-bottom: 12px;
 }
 
@@ -862,7 +915,7 @@ body {
 }
 
 .qr-card {
-    border: 1px solid var(--gray-200);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius);
     padding: 16px;
     text-align: center;
@@ -910,7 +963,7 @@ body {
 
 .modal-content {
     position: relative;
-    background: white;
+    background: var(--bg-surface);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     width: 100%;
@@ -921,7 +974,7 @@ body {
 
 .modal-header {
     padding: 16px 20px;
-    border-bottom: 1px solid var(--gray-200);
+    border-bottom: 1px solid var(--border-color);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -938,7 +991,7 @@ body {
 
 .modal-footer {
     padding: 16px 20px;
-    border-top: 1px solid var(--gray-200);
+    border-top: 1px solid var(--border-color);
     display: flex;
     justify-content: flex-end;
     gap: 12px;
@@ -997,7 +1050,7 @@ body {
 }
 
 .toast {
-    background: white;
+    background: var(--bg-surface);
     padding: 12px 20px;
     border-radius: var(--radius);
     box-shadow: var(--shadow-lg);
@@ -1077,13 +1130,13 @@ body {
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: var(--gray-200);
+    background: var(--bg-hover-strong);
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 600;
     font-size: 14px;
-    color: var(--gray-600);
+    color: var(--text-tertiary);
 }
 
 /* Reports */
@@ -1092,7 +1145,7 @@ body {
 }
 
 .report-header {
-    background: var(--gray-50);
+    background: var(--bg-surface-alt);
     padding: 20px;
     margin-bottom: 20px;
     border-radius: var(--radius);
@@ -1105,7 +1158,7 @@ body {
 }
 
 .report-header p {
-    color: var(--gray-600);
+    color: var(--text-tertiary);
     font-size: 14px;
 }
 
@@ -1114,7 +1167,7 @@ body {
 }
 
 .report-summary {
-    background: var(--gray-50);
+    background: var(--bg-surface-alt);
     padding: 16px;
     border-radius: var(--radius);
 }
@@ -1123,7 +1176,7 @@ body {
     display: flex;
     justify-content: space-between;
     padding: 8px 0;
-    border-bottom: 1px solid var(--gray-200);
+    border-bottom: 1px solid var(--border-color);
 }
 
 .report-summary .summary-row:last-child {
@@ -1199,8 +1252,6 @@ body {
     .sidebar-overlay {
         display: block;
     }
-}
-    }
 
     .qr-info-cards {
         grid-template-columns: 1fr;
@@ -1230,16 +1281,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--gray-100);
+    background: var(--bg-hover);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--gray-300);
+    background: var(--border-color-strong);
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--gray-400);
+    background: var(--border-hover);
 }
 
 /* Paste DTR Data Modal (multi-employee monthly grid) */
@@ -1257,7 +1308,7 @@ body {
 
 .paste-dtr-month-row label {
     font-weight: 500;
-    color: var(--gray-700);
+    color: var(--text-secondary);
     white-space: nowrap;
 }
 
@@ -1268,16 +1319,16 @@ body {
 .paste-dtr-rules-hint {
     font-size: 12.5px;
     line-height: 1.6;
-    color: var(--gray-600);
-    background: var(--gray-50);
-    border: 1px solid var(--gray-200);
+    color: var(--text-tertiary);
+    background: var(--bg-surface-alt);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius);
     padding: 10px 12px;
     margin-bottom: 14px;
 }
 
 .paste-dtr-rules-hint strong {
-    color: var(--gray-800);
+    color: var(--text-primary);
 }
 
 .paste-dtr-tabs {
@@ -1288,8 +1339,8 @@ body {
 
 .paste-dtr-tab {
     border: none;
-    background: var(--gray-100);
-    color: var(--gray-700);
+    background: var(--bg-hover);
+    color: var(--text-secondary);
     padding: 8px 16px;
     border-radius: var(--radius);
     font-size: 13px;
@@ -1299,7 +1350,7 @@ body {
 }
 
 .paste-dtr-tab:hover {
-    background: var(--gray-200);
+    background: var(--bg-hover-strong);
 }
 
 .paste-dtr-tab.active {
@@ -1310,7 +1361,7 @@ body {
 .paste-dtr-table-wrap {
     max-height: 460px;
     overflow: auto;
-    border: 1px solid var(--gray-200);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius);
 }
 
@@ -1322,18 +1373,18 @@ body {
 
 .paste-dtr-table th,
 .paste-dtr-table td {
-    border-right: 1px solid var(--gray-100);
-    border-bottom: 1px solid var(--gray-100);
+    border-right: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
 }
 
 .paste-dtr-table thead th {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: var(--gray-50);
+    background: var(--bg-surface-alt);
     font-size: 11.5px;
     font-weight: 600;
-    color: var(--gray-700);
+    color: var(--text-secondary);
     padding: 8px 6px;
     text-align: center;
     white-space: nowrap;
@@ -1342,7 +1393,7 @@ body {
 .paste-dtr-table thead th small {
     display: block;
     font-weight: 400;
-    color: var(--gray-400);
+    color: var(--text-faint);
     text-transform: none;
 }
 
@@ -1350,18 +1401,18 @@ body {
     position: sticky;
     left: 0;
     z-index: 3;
-    background: var(--gray-50);
+    background: var(--bg-surface-alt);
     min-width: 180px;
     text-align: left !important;
 }
 
 td.paste-dtr-emp-col {
-    background: white;
+    background: var(--bg-surface);
     z-index: 1;
 }
 
 .paste-dtr-day-col.paste-dtr-sunday {
-    background: #fff7ed;
+    background: var(--sunday-highlight);
 }
 
 .paste-dtr-day-cell {
@@ -1375,7 +1426,7 @@ td.paste-dtr-emp-col {
 }
 
 td.paste-dtr-day-cell {
-    background: white;
+    background: var(--bg-surface);
 }
 
 .paste-dtr-day-cell input[type="time"] {
@@ -1392,7 +1443,7 @@ td.paste-dtr-day-cell {
 }
 
 .paste-dtr-weekday {
-    color: var(--gray-400);
+    color: var(--text-faint);
     font-weight: 400;
 }
 
@@ -1415,7 +1466,7 @@ td.paste-dtr-day-cell {
 }
 
 .paste-dtr-toolbar small {
-    color: var(--gray-500);
+    color: var(--text-muted);
     flex: 1;
     min-width: 220px;
 }

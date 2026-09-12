@@ -4,6 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ZE-Payroll Management System</title>
+    <!-- Apply saved/preferred theme before first paint to avoid a light/dark flash -->
+    <script>
+        (function () {
+            var saved = localStorage.getItem('ze_payroll_theme');
+            var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- QR Libraries -->
@@ -76,6 +84,9 @@
                     <small id="pageSubtitle" class="text-muted">Overview of your payroll system</small>
                 </div>
                 <div class="header-actions">
+                    <button class="btn btn-outline" id="themeToggleBtn" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle dark mode">
+                        <i class="fas fa-moon" id="themeToggleIcon"></i>
+                    </button>
                     <button class="btn btn-outline" onclick="exportData()">
                         <i class="fas fa-download"></i> Export
                     </button>
