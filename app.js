@@ -2022,6 +2022,20 @@ function calculateLateMinutes(timeIn) {
 // Attendance rule engine (used by the Paste DTR Data grid)
 // Applies the split AM/PM schedule, tiered late rules, OT-beyond-PM-out,
 // and the Sunday-all-OT rule configured in Settings.
+//
+// Half-day recognition: a shift confined entirely to one side of the
+// lunch gap (arrived at/after PM Time In, or left at/before PM Time In)
+// is a genuine AM-only or PM-only half day - it's marked 'half_day'
+// regardless of how minor the lateness within that half was, because
+// the half-day *is* the day type, not a lateness severity tier.
+// Lateness is still measured against the correct half's own start time
+// (PM Time In for a PM half, AM Time In otherwise) and still reduces
+// pay via lateDeduction in computeEmployeePayroll - it just no longer
+// wrongly zeroes out the half-day credit itself, and no longer measures
+// a PM-only arrival's lateness against the AM start (which used to read
+// a normal 1pm arrival as hours "late" and could push it to 'absent').
+// A shift that spans both halves (arrived in the AM, left after PM Time
+// In) is unaffected - it still uses the original full-day thresholds.
 // ============================================
 function computeDtrForDay(timeIn, timeOut, dateStr) {
     if (!timeIn && !timeOut) return null;
@@ -2031,6 +2045,7 @@ function computeDtrForDay(timeIn, timeOut, dateStr) {
 
     const isSunday = isSundayDate(dateStr);
     const amIn = timeStrToMinutes(settings.scheduleAmIn || '08:00');
+    const pmIn = timeStrToMinutes(settings.schedulePmIn || '13:00');
     let inMin = timeStrToMinutes(timeIn);
     let outMin = timeStrToMinutes(timeOut);
     if (inMin === null || outMin === null) return null;
@@ -2038,8 +2053,8 @@ function computeDtrForDay(timeIn, timeOut, dateStr) {
 
     const { workedMinutes, otMinutes: shiftOtMinutes } = computeShiftMinutes(timeIn, timeOut);
     let otMinutes = shiftOtMinutes;
-    let lateMinutes = (amIn !== null && inMin > amIn) ? inMin - amIn : 0;
     let status = 'present';
+    let lateMinutes = 0;
 
     if (isSunday && settings.sundayAllOT) {
         // Entire shift is paid at OT rate; late rules don't apply
@@ -2047,24 +2062,33 @@ function computeDtrForDay(timeIn, timeOut, dateStr) {
         otMinutes = workedMinutes;
         status = 'present';
     } else {
+        const arrivedForPM = (pmIn !== null && inMin >= pmIn);
+        const leftBeforePM = (pmIn !== null && outMin <= pmIn);
+        const isHalfDay = arrivedForPM || leftBeforePM;
+
+        lateMinutes = arrivedForPM
+            ? ((pmIn !== null && inMin > pmIn) ? inMin - pmIn : 0)
+            : ((amIn !== null && inMin > amIn) ? inMin - amIn : 0);
+
         const grace = settings.lateGraceEnd ?? 10;
-        const perMinEnd = settings.latePerMinuteEnd ?? 29;
-        const flat1hrEnd = settings.lateFlat1hrEnd ?? 59;
         const flat2hrEnd = settings.lateFlat2hrEnd ?? 89;
         const halfDayEnd = settings.lateHalfDayEnd ?? 149;
 
-        if (lateMinutes <= grace) {
+        if (lateMinutes > halfDayEnd) {
+            // Too late to count even as a half day (or, for a full-day
+            // shift, the original "extremely late" cutoff).
+            status = 'absent';
+        } else if (isHalfDay) {
+            // Confined to one half of the day - that's the day type,
+            // regardless of exactly how late within it they were.
+            status = 'half_day';
+        } else if (lateMinutes <= grace) {
             status = 'present';
-        } else if (lateMinutes <= perMinEnd) {
-            status = 'late';
-        } else if (lateMinutes <= flat1hrEnd) {
-            status = 'late';
         } else if (lateMinutes <= flat2hrEnd) {
             status = 'late';
-        } else if (lateMinutes <= halfDayEnd) {
-            status = 'half_day';
         } else {
-            status = 'absent';
+            // Full-day shift, very late but under the absence cutoff.
+            status = 'half_day';
         }
     }
 
@@ -2257,11 +2281,15 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
         d.status === 'present' || d.status === 'late'
     ).length;
 
-    // Half days worked - only counts if the employee actually logged a
-    // substantial number of hours, and is paid at half the daily rate.
-    const halfDaysWorked = dtrs.filter(d =>
-        d.status === 'half_day' && (d.totalHours || 0) >= 4
-    ).length;
+    // Half days worked. The attendance engine (server-side for kiosk
+    // punches, computeDtrForDay() below for manual/paste entries) only
+    // assigns 'half_day' when the shift was genuinely confined to one
+    // AM/PM window - so the status alone is trustworthy. Lateness within
+    // that half is penalized separately via lateDeduction, not by
+    // requiring a minimum hour count here (a late-but-real half day, e.g.
+    // 3.98 hrs because the employee was 1 minute late, would otherwise be
+    // silently zeroed out).
+    const halfDaysWorked = dtrs.filter(d => d.status === 'half_day').length;
 
     // Kept for anything downstream (OT cap, rendering, etc.) that expects
     // a single "days worked" figure. Half days count as 0.5 for that purpose.
