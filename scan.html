@@ -330,9 +330,10 @@ async function submitPunch() {
     submitting = false;
 
     if (error) {
+        console.error('record_attendance_punch RPC error:', error);
         pin = '';
         updateDots(true);
-        setStatus('Something went wrong. Please try again.');
+        setStatus('Error: ' + (error.message || error.code || 'unknown - please screenshot this and send to your admin.'));
         return;
     }
 
