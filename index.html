@@ -504,13 +504,20 @@
                             <h3><i class="fas fa-money-bill"></i> Pay Settings</h3>
                         </div>
                         <div class="card-body">
-                            <div class="form-group">
+                                                <div class="form-group">
                                 <label>Enable Statutory Deductions</label>
                                 <div class="checkbox-label">
                                     <input type="checkbox" id="enableStatutoryDeductions" onchange="saveSettings()">
                                     <span>Enable SSS, PhilHealth, and Pag-IBIG deductions in payroll computation</span>
                                 </div>
                                 <small class="text-muted">When disabled, payroll will only calculate regular pay, OT pay, and late deductions</small>
+                            </div>
+                            <div class="form-group">
+                                <div class="checkbox-label">
+                                    <input type="checkbox" id="hideStatutoryOnPayslip" onchange="saveSettings()">
+                                    <span>Hide SSS, PhilHealth, and Pag-IBIG on the printed payslip</span>
+                                </div>
+                                <small class="text-muted">The deductions still happen and are reflected in the total/net pay - this only hides the itemized breakdown on the payslip employees see.</small>
                             </div>
 
                             <div class="form-group">
