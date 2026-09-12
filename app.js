@@ -202,6 +202,17 @@ const defaultSettings = {
     baseDailyPay: 500.00,
     payrollCutoff: '15',
     payrollFrequency: 'monthly',
+    // Customizable semi-monthly pay periods, used by the Payroll page's
+    // "Pay Period" selector. Each period cuts off attendance on
+    // (startDay..endDay) of the selected month and is paid out on
+    // payoutDay of the month `payoutMonthOffset` months later (0 = same
+    // month, 1 = the following month). endDay: 'last' means "last day of
+    // the month" (so it always works regardless of month length).
+    // Editable under Settings > Payroll Settings > Pay Periods.
+    payPeriods: [
+        { id: 'p1', label: '1st - 15th', startDay: 1, endDay: 15, payoutDay: 20, payoutMonthOffset: 0 },
+        { id: 'p2', label: '16th - End of Month', startDay: 16, endDay: 'last', payoutDay: 5, payoutMonthOffset: 1 }
+    ],
     defaultDailyRate: 400.00,
     defaultHourlyRate: 50.00,
     defaultPosition: 'Employee',
@@ -481,6 +492,10 @@ function loadSettings() {
     updateLateRangeGroupVisibility();
     renderLateRanges();
 
+    // Customizable pay periods (cutoffs + payout dates)
+    renderPayPeriods();
+    populatePayrollPeriodOptions();
+
     // Update default values in employee form
     document.getElementById('baseDailyPayInput').value = settings.baseDailyPay || 500.00;
 }
@@ -558,9 +573,28 @@ function saveSettings() {
     });
     settings.lateRanges = ranges;
 
+    // Save customizable pay periods
+    const payPeriods = [];
+    document.querySelectorAll('.pay-period-item').forEach(item => {
+        const label = item.querySelector('.pay-period-label').value.trim();
+        const startDay = parseInt(item.querySelector('.pay-period-start-day').value) || 1;
+        const endDayRaw = item.querySelector('.pay-period-end-day').value;
+        const endDay = endDayRaw === 'last' ? 'last' : (parseInt(endDayRaw) || startDay);
+        const payoutDay = parseInt(item.querySelector('.pay-period-payout-day').value) || 1;
+        const payoutMonthOffset = parseInt(item.querySelector('.pay-period-payout-offset').value) || 0;
+        if (label) {
+            payPeriods.push({
+                id: item.dataset.periodId,
+                label, startDay, endDay, payoutDay, payoutMonthOffset
+            });
+        }
+    });
+    settings.payPeriods = payPeriods;
+
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
     showToast('Settings saved successfully!', 'success');
     updateDashboard();
+    populatePayrollPeriodOptions();
     loadPayroll();
     syncAttendanceSettingsToSupabase();
 }
@@ -740,6 +774,83 @@ function addGlobalDeduction() {
 function removeGlobalDeduction(index) {
     settings.globalOtherDeductions.splice(index, 1);
     renderGlobalOtherDeductions();
+    saveSettings();
+}
+
+// ============================================
+// Customizable Pay Periods (cutoffs + payout dates)
+// e.g. "1st-15th, paid on the 20th" and "16th-end of month, paid on the
+// 5th of the following month". Used by the Payroll page's Pay Period
+// selector (see getPayPeriods/getPayPeriodRange below).
+// ============================================
+function renderPayPeriods() {
+    const container = document.getElementById('payPeriodsList');
+    if (!container) return;
+    const periods = getPayPeriods();
+
+    const monthOffsetOptions = (selected) => [0, 1, 2].map(n =>
+        `<option value="${n}" ${selected === n ? 'selected' : ''}>${n === 0 ? 'Same month' : n === 1 ? 'Next month' : `+${n} months`}</option>`
+    ).join('');
+
+    container.innerHTML = periods.map((p) => `
+        <div class="pay-period-item" data-period-id="${p.id}" style="border: 1px solid var(--border-color, #ddd); border-radius: 6px; padding: 10px; margin-bottom: 10px;">
+            <div class="form-row">
+                <div class="form-group" style="flex: 2;">
+                    <label>Label</label>
+                    <input type="text" class="pay-period-label form-control" value="${(p.label || '').replace(/"/g, '&quot;')}" placeholder="e.g. 1st - 15th" onchange="saveSettings()">
+                </div>
+                <button class="btn btn-sm btn-outline text-danger" style="align-self: flex-end; margin-bottom: 8px;" onclick="removePayPeriod('${p.id}')">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Cutoff Start Day</label>
+                    <input type="number" class="pay-period-start-day form-control" min="1" max="31" value="${p.startDay}" onchange="saveSettings()">
+                </div>
+                <div class="form-group">
+                    <label>Cutoff End Day</label>
+                    <select class="pay-period-end-day form-control" onchange="saveSettings()">
+                        <option value="last" ${p.endDay === 'last' ? 'selected' : ''}>Last day of month</option>
+                        ${Array.from({ length: 31 }, (_, i) => i + 1).map(d =>
+                            `<option value="${d}" ${p.endDay === d ? 'selected' : ''}>${d}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Payout Day</label>
+                    <input type="number" class="pay-period-payout-day form-control" min="1" max="31" value="${p.payoutDay}" onchange="saveSettings()">
+                </div>
+                <div class="form-group">
+                    <label>Payout Month</label>
+                    <select class="pay-period-payout-offset form-control" onchange="saveSettings()">
+                        ${monthOffsetOptions(p.payoutMonthOffset || 0)}
+                    </select>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function addPayPeriod() {
+    settings.payPeriods = getPayPeriods();
+    settings.payPeriods.push({
+        id: 'p' + Date.now(),
+        label: 'New Period',
+        startDay: 1,
+        endDay: 'last',
+        payoutDay: 1,
+        payoutMonthOffset: 0
+    });
+    renderPayPeriods();
+    saveSettings();
+}
+
+function removePayPeriod(id) {
+    settings.payPeriods = getPayPeriods().filter(p => p.id !== id);
+    renderPayPeriods();
     saveSettings();
 }
 
@@ -2121,19 +2232,96 @@ function isSundayDate(dateStr) {
 // Payroll Functions
 // ============================================
 
+// Returns the configured pay periods (falls back to the built-in
+// semi-monthly default if none have been customized yet).
+function getPayPeriods() {
+    if (Array.isArray(settings.payPeriods) && settings.payPeriods.length > 0) {
+        return settings.payPeriods;
+    }
+    return [
+        { id: 'p1', label: '1st - 15th', startDay: 1, endDay: 15, payoutDay: 20, payoutMonthOffset: 0 },
+        { id: 'p2', label: '16th - End of Month', startDay: 16, endDay: 'last', payoutDay: 5, payoutMonthOffset: 1 }
+    ];
+}
+
+// Resolves a configured pay period against a specific year/month into
+// concrete YYYY-MM-DD start/end/payout dates. `endDay: 'last'` always
+// resolves to that month's actual last day. payoutMonthOffset shifts the
+// payout date forward by that many months (0 = same month as the
+// period, 1 = the following month, etc.), clamped to a valid day in
+// whichever month it lands on.
+function getPayPeriodRange(year, month, period) {
+    const lastDay = getDaysInMonth(year, month);
+    const startDay = Math.min(Math.max(parseInt(period.startDay, 10) || 1, 1), lastDay);
+    const endDay = period.endDay === 'last' ? lastDay : Math.min(parseInt(period.endDay, 10) || lastDay, lastDay);
+    const startDate = `${year}-${pad2(month)}-${pad2(startDay)}`;
+    const endDate = `${year}-${pad2(month)}-${pad2(endDay)}`;
+
+    let payoutYear = year;
+    let payoutMonth = month + (parseInt(period.payoutMonthOffset, 10) || 0);
+    while (payoutMonth > 12) { payoutMonth -= 12; payoutYear += 1; }
+    while (payoutMonth < 1) { payoutMonth += 12; payoutYear -= 1; }
+    const payoutLastDay = getDaysInMonth(payoutYear, payoutMonth);
+    const payoutDay = Math.min(parseInt(period.payoutDay, 10) || payoutLastDay, payoutLastDay);
+    const payoutDate = `${payoutYear}-${pad2(payoutMonth)}-${pad2(payoutDay)}`;
+
+    return { startDate, endDate, payoutDate };
+}
+
+// (Re)populates the Payroll page's Pay Period dropdown from the
+// currently configured periods, preserving the current selection where
+// it still exists.
+function populatePayrollPeriodOptions() {
+    const sel = document.getElementById('payrollPeriodFilter');
+    if (!sel) return;
+    const periods = getPayPeriods();
+    const prevValue = sel.value;
+
+    sel.innerHTML = periods.map(p => `<option value="${p.id}">${p.label}</option>`).join('')
+        + `<option value="full">Full Month</option>`;
+
+    if (prevValue === 'full' || periods.some(p => p.id === prevValue)) {
+        sel.value = prevValue;
+    } else if (periods.length > 0) {
+        sel.value = periods[0].id;
+    }
+}
+
 function loadPayroll() {
     const employeeFilter = document.getElementById('payrollEmployeeFilter')?.value;
     const monthFilter = document.getElementById('payrollMonthFilter')?.value;
+    const periodFilter = document.getElementById('payrollPeriodFilter')?.value || 'full';
 
     if (!monthFilter) return;
 
     const [year, month] = monthFilter.split('-').map(Number);
-    const startDate = getMonthStartStr(year, month);
-    const endDate = getMonthEndStr(year, month);
+    let startDate, endDate, payoutDate = null;
+
+    if (periodFilter !== 'full') {
+        const period = getPayPeriods().find(p => p.id === periodFilter);
+        if (period) {
+            const range = getPayPeriodRange(year, month, period);
+            startDate = range.startDate;
+            endDate = range.endDate;
+            payoutDate = range.payoutDate;
+        }
+    }
+    if (!startDate) {
+        startDate = getMonthStartStr(year, month);
+        endDate = getMonthEndStr(year, month);
+    }
 
     // Set globals for payslip generation
     startDateGlobal = startDate;
     endDateGlobal = endDate;
+    payoutDateGlobal = payoutDate;
+
+    const infoEl = document.getElementById('payrollPeriodInfo');
+    if (infoEl) {
+        infoEl.textContent = payoutDate
+            ? `Cutoff: ${formatDate(startDate)} - ${formatDate(endDate)}  •  Payout date: ${formatDate(payoutDate)}`
+            : `Cutoff: ${formatDate(startDate)} - ${formatDate(endDate)}`;
+    }
 
     let filteredDTR = dtrEntries.filter(d => d.date >= startDate && d.date <= endDate);
 
@@ -2152,6 +2340,7 @@ function loadPayroll() {
             const empDTRs = filteredDTR.filter(d => d.employeeId === employeeFilter);
             const payrollData = computeEmployeePayroll(emp, empDTRs, startDate, endDate);
             renderPayrollRow(tbody, emp, payrollData);
+
         }
     } else {
         activeEmployees.forEach(emp => {
@@ -2535,6 +2724,7 @@ function renderPayrollRow(tbody, emp, data) {
 // Global variables for payslip generation
 let startDateGlobal = '';
 let endDateGlobal = '';
+let payoutDateGlobal = null;
 
 // ============================================
 // Payroll Deductions Modal
@@ -2680,10 +2870,14 @@ async function processPayroll() {
     await loadDTR();
     loadPayroll();
 
-    // Save processed payroll records
-    const [year, month] = monthFilter.split('-').map(Number);
-    const startDate = getMonthStartStr(year, month);
-    const endDate = getMonthEndStr(year, month);
+    // loadPayroll() (just called above) already resolved the selected Pay
+    // Period into concrete dates and set these globals - reuse them
+    // rather than recomputing, so Compute Payroll always matches
+    // whatever period is currently selected on screen (a specific
+    // cutoff, or the whole month).
+    const startDate = startDateGlobal;
+    const endDate = endDateGlobal;
+    const payoutDate = payoutDateGlobal;
 
     const activeEmployees = employees.filter(e => e.status === 'active');
     const payrollRecords = [];
@@ -2707,6 +2901,7 @@ async function processPayroll() {
             employeeName: `${emp.firstName} ${emp.lastName}`,
             periodStart: startDate,
             periodEnd: endDate,
+            payoutDate: payoutDate,
             ...payrollData,
             generatedAt: getAppNow().toISOString()
         });
@@ -2719,7 +2914,12 @@ async function processPayroll() {
     const updated = [...filtered, ...payrollRecords];
     localStorage.setItem(STORAGE_KEYS.PAYROLL, JSON.stringify(updated));
 
-    showToast(`Payroll processed for ${payrollRecords.length} employees!`, 'success');
+    showToast(
+        payoutDate
+            ? `Payroll processed for ${payrollRecords.length} employees! Payout date: ${formatDate(payoutDate)}.`
+            : `Payroll processed for ${payrollRecords.length} employees!`,
+        'success'
+    );
 }
 
 function generatePayslip(employeeId, startDate, endDate) {
@@ -2746,6 +2946,7 @@ function generatePayslip(employeeId, startDate, endDate) {
                 <hr style="margin: 16px 0; border-color: #ccc;">
                 <h3 style="margin: 0; font-size: 18px;">PAYSLIP</h3>
                 <p style="margin: 4px 0; font-size: 13px;">Pay Period: ${formatDate(startDate)} - ${formatDate(endDate)}</p>
+                ${payoutDateGlobal ? `<p style="margin: 4px 0; font-size: 13px;">Payout Date: ${formatDate(payoutDateGlobal)}</p>` : ''}
             </div>
 
             <!-- Employee Info -->
@@ -3439,7 +3640,7 @@ function navigateTo(page) {
     // page. Refetch here so kiosk (scan.html) and camera-scan punches
     // that arrived while this tab was open elsewhere are never missed
     // just because the admin went straight to Payroll.
-    if (page === 'payroll') loadDTR().then(loadPayroll);
+    if (page === 'payroll') { populatePayrollPeriodOptions(); loadDTR().then(loadPayroll); }
     if (page === 'reports') generateReport();
 }
 

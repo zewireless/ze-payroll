@@ -311,12 +311,14 @@
                                 <option value="">All Employees</option>
                             </select>
                             <input type="month" id="payrollMonthFilter" class="form-control" onchange="loadPayroll()">
+                            <select id="payrollPeriodFilter" class="form-control" onchange="loadPayroll()"></select>
                             <button class="btn btn-success btn-sm" onclick="processPayroll()">
                                 <i class="fas fa-calculator"></i> Compute Payroll
                             </button>
                         </div>
                     </div>
                     <div class="card-body">
+                        <p id="payrollPeriodInfo" class="text-muted" style="font-size: 13px; margin-top: -8px; margin-bottom: 12px;"></p>
                         <div class="table-responsive">
                             <table class="table" id="payrollTable">
                                 <thead>
@@ -654,6 +656,19 @@
                                     <option value="semi_monthly">Semi-Monthly</option>
                                     <option value="weekly">Weekly</option>
                                 </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Pay Periods (Cutoffs &amp; Payout Dates)</label>
+                                <small class="text-muted" style="display: block; margin-bottom: 8px;">
+                                    Define each cutoff (e.g. "1st - 15th") and which day it's paid out on.
+                                    "Payout Month" lets a cutoff be paid the following month (e.g. the 16th-end
+                                    cutoff paid on the 5th of next month). These show up as choices on the
+                                    Payroll page's Pay Period dropdown.
+                                </small>
+                                <div id="payPeriodsList"></div>
+                                <button class="btn btn-sm btn-outline mt-1" onclick="addPayPeriod()">
+                                    <i class="fas fa-plus"></i> Add Pay Period
+                                </button>
                             </div>
                         </div>
                     </div>
