@@ -2633,11 +2633,11 @@ function generatePayslip(employeeId, startDate, endDate) {
                         <th style="text-align: left; padding: 6px; border: 1px solid #ddd;">Description</th>
                         <th style="text-align: right; padding: 6px; border: 1px solid #ddd;">Amount</th>
                     </tr>
-                                  <tr>
+                    <tr>
                         <td style="padding: 6px; border: 1px solid #ddd;">Late Deduction (${payrollData.lateMinutes || 0} min)</td>
                         <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.lateDeduction)}</td>
                     </tr>
-                    ` : ''}
+                
                     ${settings.enableStatutoryDeductions !== false && !settings.hideStatutoryOnPayslip ? `
                     <tr>
                         <td style="padding: 6px; border: 1px solid #ddd;">SSS Contribution</td>
