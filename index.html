@@ -501,6 +501,53 @@
 
                     <div class="card">
                         <div class="card-header">
+                            <h3><i class="fas fa-location-dot"></i> Attendance Security (Geofencing)</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <div class="checkbox-label">
+                                    <input type="checkbox" id="geofenceEnabled" onchange="saveSettings()">
+                                    <span>Only allow employees to time in/out from the office</span>
+                                </div>
+                                <small class="text-muted">Applies to employees scanning their own QR with their own phone. Off by default so it never blocks attendance until you set it up.</small>
+                            </div>
+                            <div class="form-group">
+                                <button type="button" class="btn btn-outline btn-sm" id="captureLocationBtn" onclick="captureOfficeLocation()">
+                                    <i class="fas fa-location-crosshairs"></i> Capture Office Location
+                                </button>
+                                <small class="text-muted" id="officeLocationAccuracy">Stand at the office (where employees will scan from), then tap this on your own phone/laptop.</small>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="text-muted">Office Latitude</label>
+                                    <input type="number" id="officeLat" class="form-control" step="0.000001" placeholder="e.g. 10.315699" onchange="saveSettings()">
+                                </div>
+                                <div class="form-group">
+                                    <label class="text-muted">Office Longitude</label>
+                                    <input type="number" id="officeLng" class="form-control" step="0.000001" placeholder="e.g. 123.885437" onchange="saveSettings()">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="text-muted">Allowed Radius (meters)</label>
+                                <input type="number" id="geofenceRadiusM" class="form-control" min="5" step="1" onchange="saveSettings()">
+                                <small class="text-muted">
+                                    Phone GPS is typically only accurate to ~10-30m outdoors and can be much worse indoors -
+                                    a 5m radius will likely reject employees standing right at the office. 30-50m is a safer
+                                    default; the app also auto-adds a small buffer based on each phone's reported GPS accuracy.
+                                </small>
+                            </div>
+                            <div class="alert alert-info mt-2">
+                                <i class="fas fa-shield-halved"></i>
+                                This check runs on the server, not just in the browser, so it can't be bypassed by editing the page.
+                                It stops casual "clock in from home" attempts, but a phone with GPS-spoofing tools enabled could
+                                still fake a location - for stronger guarantees, consider pairing this with a physical NFC tag
+                                or a QR code that only displays at the office.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
                             <h3><i class="fas fa-money-bill"></i> Pay Settings</h3>
                         </div>
                         <div class="card-body">

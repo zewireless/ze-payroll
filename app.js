@@ -169,6 +169,11 @@ const defaultSettings = {
     timezone: 'Asia/Manila',
     dateTimeOverrideEnabled: false,
     dateTimeOverrideOffsetMs: 0,
+    // Attendance geofencing - off by default until an admin captures a location
+    geofenceEnabled: false,
+    officeLat: null,
+    officeLng: null,
+    geofenceRadiusM: 50,
     lateType: 'per_minute',
     latePerMinute: 1.00,
     lateRanges: [
@@ -444,6 +449,10 @@ function loadSettings() {
     document.getElementById('lateFlat2hrEnd').value = settings.lateFlat2hrEnd ?? 89;
     document.getElementById('lateHalfDayEnd').value = settings.lateHalfDayEnd ?? 149;
     document.getElementById('sundayAllOT').checked = settings.sundayAllOT !== false;
+    document.getElementById('geofenceEnabled').checked = !!settings.geofenceEnabled;
+    document.getElementById('officeLat').value = settings.officeLat ?? '';
+    document.getElementById('officeLng').value = settings.officeLng ?? '';
+    document.getElementById('geofenceRadiusM').value = settings.geofenceRadiusM || 50;
     document.getElementById('baseDailyPay').value = settings.baseDailyPay || 500.00;
     document.getElementById('payrollCutoff').value = settings.payrollCutoff || '15';
     document.getElementById('payrollFrequency').value = settings.payrollFrequency || 'monthly';
@@ -491,6 +500,20 @@ function saveSettings() {
     settings.lateFlat2hrEnd = parseInt(document.getElementById('lateFlat2hrEnd').value) || 0;
     settings.lateHalfDayEnd = parseInt(document.getElementById('lateHalfDayEnd').value) || 0;
     settings.sundayAllOT = document.getElementById('sundayAllOT').checked;
+
+    // Attendance geofencing
+    settings.geofenceEnabled = document.getElementById('geofenceEnabled').checked;
+    const latVal = document.getElementById('officeLat').value;
+    const lngVal = document.getElementById('officeLng').value;
+    settings.officeLat = latVal !== '' ? parseFloat(latVal) : null;
+    settings.officeLng = lngVal !== '' ? parseFloat(lngVal) : null;
+    settings.geofenceRadiusM = parseInt(document.getElementById('geofenceRadiusM').value) || 50;
+    if (settings.geofenceEnabled && (settings.officeLat === null || settings.officeLng === null)) {
+        showToast('Capture the office location before enabling geofencing.', 'error');
+        settings.geofenceEnabled = false;
+        document.getElementById('geofenceEnabled').checked = false;
+    }
+
     // Keep legacy single time-in/out fields in sync with the AM start / PM end
     // so older calculation paths (manual DTR entry) stay consistent.
     settings.standardTimeIn = settings.scheduleAmIn;
@@ -539,6 +562,75 @@ function saveSettings() {
     showToast('Settings saved successfully!', 'success');
     updateDashboard();
     loadPayroll();
+    syncAttendanceSettingsToSupabase();
+}
+
+// Pushes the schedule/late-rule/timezone/geofence settings to the shared
+// Supabase `payroll_settings` row. This matters because the self-service
+// kiosk (scan.html) runs the `record_attendance_punch` RPC entirely on the
+// server with no access to this browser's localStorage - without this
+// sync, changes made here would only ever affect the admin dashboard's own
+// calculations, not actual kiosk punches.
+async function syncAttendanceSettingsToSupabase() {
+    if (!supabaseClient) return;
+
+    const { error } = await supabaseClient.from('payroll_settings').upsert({
+        id: 1,
+        schedule_am_in: settings.scheduleAmIn,
+        schedule_am_out: settings.scheduleAmOut,
+        schedule_pm_in: settings.schedulePmIn,
+        schedule_pm_out: settings.schedulePmOut,
+        late_grace_end: settings.lateGraceEnd,
+        late_per_minute_end: settings.latePerMinuteEnd,
+        late_flat_1hr_end: settings.lateFlat1hrEnd,
+        late_flat_2hr_end: settings.lateFlat2hrEnd,
+        late_half_day_end: settings.lateHalfDayEnd,
+        sunday_all_ot: settings.sundayAllOT,
+        timezone: settings.timezone || DEFAULT_APP_TIMEZONE,
+        geofence_enabled: !!settings.geofenceEnabled,
+        office_lat: settings.geofenceEnabled ? settings.officeLat : null,
+        office_lng: settings.geofenceEnabled ? settings.officeLng : null,
+        geofence_radius_m: settings.geofenceRadiusM || 50
+    }, { onConflict: 'id' });
+
+    if (error) {
+        console.error('Failed to sync attendance settings to Supabase:', error);
+        showToast('Saved locally, but failed to sync to the kiosk: ' + error.message, 'error');
+    }
+}
+
+// Captures the admin's current GPS location (call this while physically
+// standing where employees will scan) to use as the office's geofence
+// center.
+function captureOfficeLocation() {
+    if (!navigator.geolocation) {
+        showToast('Geolocation is not supported by this browser.', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('captureLocationBtn');
+    const hint = document.getElementById('officeLocationAccuracy');
+    if (btn) { btn.disabled = true; }
+    if (hint) { hint.textContent = 'Getting your current location...'; }
+
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            document.getElementById('officeLat').value = pos.coords.latitude.toFixed(6);
+            document.getElementById('officeLng').value = pos.coords.longitude.toFixed(6);
+            if (hint) {
+                hint.textContent = `Captured with ~${Math.round(pos.coords.accuracy)}m GPS accuracy. ` +
+                    (pos.coords.accuracy > 30 ? 'That\'s a bit imprecise - try again outdoors or near a window for a tighter fix.' : 'Looks good.');
+            }
+            if (btn) { btn.disabled = false; }
+            saveSettings();
+        },
+        (err) => {
+            showToast('Could not get your location: ' + err.message, 'error');
+            if (hint) { hint.textContent = 'Stand at the office (where employees will scan from), then tap this on your own phone/laptop.'; }
+            if (btn) { btn.disabled = false; }
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
 }
 
 function saveCompanySettings() {

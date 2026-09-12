@@ -162,6 +162,26 @@ if (window.supabase && typeof SUPABASE_URL !== 'undefined' && SUPABASE_URL && !S
 let pin = '';
 let submitting = false;
 let employeeName = '';
+let locationPromise = null;
+
+// Kicks off a GPS fix as soon as the page loads, in parallel with the
+// employee lookup, so it's usually already resolved by the time the
+// employee finishes typing their PIN. Resolves to null (never rejects)
+// if location is unavailable, denied, or too slow - the server decides
+// what to do with a missing location.
+function startLocationCapture(timeoutMs = 12000) {
+    return new Promise((resolve) => {
+        if (!navigator.geolocation) return resolve(null);
+        let settled = false;
+        const done = (val) => { if (!settled) { settled = true; resolve(val); } };
+        const timer = setTimeout(() => done(null), timeoutMs);
+        navigator.geolocation.getCurrentPosition(
+            (pos) => { clearTimeout(timer); done({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }); },
+            () => { clearTimeout(timer); done(null); },
+            { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 }
+        );
+    });
+}
 
 function initials(name) {
     return name.split(' ').filter(Boolean).map(p => p[0]).join('').slice(0, 2).toUpperCase();
@@ -190,9 +210,25 @@ function renderPinPad() {
             <div class="key action" data-key="back">&larr;</div>
         </div>
         <div class="status-msg" id="statusMsg"></div>
+        <div class="sub" style="margin-top:14px; margin-bottom:0; font-size:12px;">&#128205; Your location is checked to confirm you're at the office.</div>
     `;
     document.getElementById('keypad').addEventListener('click', onKeyPress);
     updateDots();
+}
+
+function renderLocationError(msg) {
+    submitting = false;
+    document.getElementById('card').innerHTML = `
+        <div class="result-icon error" style="font-size:26px;">&#128205;</div>
+        <div class="result-title">Can't Verify Your Location</div>
+        <div class="result-sub">${msg}</div>
+        <button class="btn" onclick="retryAfterLocationError()">Try Again</button>
+    `;
+}
+
+function retryAfterLocationError() {
+    locationPromise = startLocationCapture();
+    renderPinPad();
 }
 
 function updateDots(shake) {
@@ -234,11 +270,17 @@ function setStatus(msg) {
 
 async function submitPunch() {
     submitting = true;
+    setStatus('Verifying your location...');
+
+    const loc = await locationPromise;
     setStatus('Checking...');
 
     const { data, error } = await supabaseClient.rpc('record_attendance_punch', {
         p_employee_id: employeeId,
-        p_pin: pin
+        p_pin: pin,
+        p_lat: loc ? loc.lat : null,
+        p_lng: loc ? loc.lng : null,
+        p_accuracy_m: loc ? loc.accuracy : null
     });
 
     submitting = false;
@@ -251,9 +293,13 @@ async function submitPunch() {
     }
 
     if (!data.success) {
-        pin = '';
-        updateDots(true);
-        setStatus(data.message || 'Incorrect PIN.');
+        if (data.reason === 'geofence') {
+            renderLocationError(data.message);
+        } else {
+            pin = '';
+            updateDots(true);
+            setStatus(data.message || 'Incorrect PIN.');
+        }
         return;
     }
 
@@ -279,6 +325,8 @@ async function init() {
         renderError('QR Code Not Recognized', 'Please scan your personal attendance QR code, or contact your administrator.');
         return;
     }
+
+    locationPromise = startLocationCapture();
 
     const { data, error } = await supabaseClient
         .from('employees_kiosk_view')

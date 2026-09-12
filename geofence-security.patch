@@ -1,0 +1,286 @@
+diff --git a/app.js b/app.js
+index 190068b..5372513 100644
+--- a/app.js
++++ b/app.js
+@@ -169,6 +169,11 @@ const defaultSettings = {
+     timezone: 'Asia/Manila',
+     dateTimeOverrideEnabled: false,
+     dateTimeOverrideOffsetMs: 0,
++    // Attendance geofencing - off by default until an admin captures a location
++    geofenceEnabled: false,
++    officeLat: null,
++    officeLng: null,
++    geofenceRadiusM: 50,
+     lateType: 'per_minute',
+     latePerMinute: 1.00,
+     lateRanges: [
+@@ -444,6 +449,10 @@ function loadSettings() {
+     document.getElementById('lateFlat2hrEnd').value = settings.lateFlat2hrEnd ?? 89;
+     document.getElementById('lateHalfDayEnd').value = settings.lateHalfDayEnd ?? 149;
+     document.getElementById('sundayAllOT').checked = settings.sundayAllOT !== false;
++    document.getElementById('geofenceEnabled').checked = !!settings.geofenceEnabled;
++    document.getElementById('officeLat').value = settings.officeLat ?? '';
++    document.getElementById('officeLng').value = settings.officeLng ?? '';
++    document.getElementById('geofenceRadiusM').value = settings.geofenceRadiusM || 50;
+     document.getElementById('baseDailyPay').value = settings.baseDailyPay || 500.00;
+     document.getElementById('payrollCutoff').value = settings.payrollCutoff || '15';
+     document.getElementById('payrollFrequency').value = settings.payrollFrequency || 'monthly';
+@@ -491,6 +500,20 @@ function saveSettings() {
+     settings.lateFlat2hrEnd = parseInt(document.getElementById('lateFlat2hrEnd').value) || 0;
+     settings.lateHalfDayEnd = parseInt(document.getElementById('lateHalfDayEnd').value) || 0;
+     settings.sundayAllOT = document.getElementById('sundayAllOT').checked;
++
++    // Attendance geofencing
++    settings.geofenceEnabled = document.getElementById('geofenceEnabled').checked;
++    const latVal = document.getElementById('officeLat').value;
++    const lngVal = document.getElementById('officeLng').value;
++    settings.officeLat = latVal !== '' ? parseFloat(latVal) : null;
++    settings.officeLng = lngVal !== '' ? parseFloat(lngVal) : null;
++    settings.geofenceRadiusM = parseInt(document.getElementById('geofenceRadiusM').value) || 50;
++    if (settings.geofenceEnabled && (settings.officeLat === null || settings.officeLng === null)) {
++        showToast('Capture the office location before enabling geofencing.', 'error');
++        settings.geofenceEnabled = false;
++        document.getElementById('geofenceEnabled').checked = false;
++    }
++
+     // Keep legacy single time-in/out fields in sync with the AM start / PM end
+     // so older calculation paths (manual DTR entry) stay consistent.
+     settings.standardTimeIn = settings.scheduleAmIn;
+@@ -539,6 +562,75 @@ function saveSettings() {
+     showToast('Settings saved successfully!', 'success');
+     updateDashboard();
+     loadPayroll();
++    syncAttendanceSettingsToSupabase();
++}
++
++// Pushes the schedule/late-rule/timezone/geofence settings to the shared
++// Supabase `payroll_settings` row. This matters because the self-service
++// kiosk (scan.html) runs the `record_attendance_punch` RPC entirely on the
++// server with no access to this browser's localStorage - without this
++// sync, changes made here would only ever affect the admin dashboard's own
++// calculations, not actual kiosk punches.
++async function syncAttendanceSettingsToSupabase() {
++    if (!supabaseClient) return;
++
++    const { error } = await supabaseClient.from('payroll_settings').upsert({
++        id: 1,
++        schedule_am_in: settings.scheduleAmIn,
++        schedule_am_out: settings.scheduleAmOut,
++        schedule_pm_in: settings.schedulePmIn,
++        schedule_pm_out: settings.schedulePmOut,
++        late_grace_end: settings.lateGraceEnd,
++        late_per_minute_end: settings.latePerMinuteEnd,
++        late_flat_1hr_end: settings.lateFlat1hrEnd,
++        late_flat_2hr_end: settings.lateFlat2hrEnd,
++        late_half_day_end: settings.lateHalfDayEnd,
++        sunday_all_ot: settings.sundayAllOT,
++        timezone: settings.timezone || DEFAULT_APP_TIMEZONE,
++        geofence_enabled: !!settings.geofenceEnabled,
++        office_lat: settings.geofenceEnabled ? settings.officeLat : null,
++        office_lng: settings.geofenceEnabled ? settings.officeLng : null,
++        geofence_radius_m: settings.geofenceRadiusM || 50
++    }, { onConflict: 'id' });
++
++    if (error) {
++        console.error('Failed to sync attendance settings to Supabase:', error);
++        showToast('Saved locally, but failed to sync to the kiosk: ' + error.message, 'error');
++    }
++}
++
++// Captures the admin's current GPS location (call this while physically
++// standing where employees will scan) to use as the office's geofence
++// center.
++function captureOfficeLocation() {
++    if (!navigator.geolocation) {
++        showToast('Geolocation is not supported by this browser.', 'error');
++        return;
++    }
++
++    const btn = document.getElementById('captureLocationBtn');
++    const hint = document.getElementById('officeLocationAccuracy');
++    if (btn) { btn.disabled = true; }
++    if (hint) { hint.textContent = 'Getting your current location...'; }
++
++    navigator.geolocation.getCurrentPosition(
++        (pos) => {
++            document.getElementById('officeLat').value = pos.coords.latitude.toFixed(6);
++            document.getElementById('officeLng').value = pos.coords.longitude.toFixed(6);
++            if (hint) {
++                hint.textContent = `Captured with ~${Math.round(pos.coords.accuracy)}m GPS accuracy. ` +
++                    (pos.coords.accuracy > 30 ? 'That\'s a bit imprecise - try again outdoors or near a window for a tighter fix.' : 'Looks good.');
++            }
++            if (btn) { btn.disabled = false; }
++            saveSettings();
++        },
++        (err) => {
++            showToast('Could not get your location: ' + err.message, 'error');
++            if (hint) { hint.textContent = 'Stand at the office (where employees will scan from), then tap this on your own phone/laptop.'; }
++            if (btn) { btn.disabled = false; }
++        },
++        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
++    );
+ }
+ 
+ function saveCompanySettings() {
+diff --git a/index.html b/index.html
+index bb4321f..32027a7 100644
+--- a/index.html
++++ b/index.html
+@@ -499,6 +499,53 @@
+                         </div>
+                     </div>
+ 
++                    <div class="card">
++                        <div class="card-header">
++                            <h3><i class="fas fa-location-dot"></i> Attendance Security (Geofencing)</h3>
++                        </div>
++                        <div class="card-body">
++                            <div class="form-group">
++                                <div class="checkbox-label">
++                                    <input type="checkbox" id="geofenceEnabled" onchange="saveSettings()">
++                                    <span>Only allow employees to time in/out from the office</span>
++                                </div>
++                                <small class="text-muted">Applies to employees scanning their own QR with their own phone. Off by default so it never blocks attendance until you set it up.</small>
++                            </div>
++                            <div class="form-group">
++                                <button type="button" class="btn btn-outline btn-sm" id="captureLocationBtn" onclick="captureOfficeLocation()">
++                                    <i class="fas fa-location-crosshairs"></i> Capture Office Location
++                                </button>
++                                <small class="text-muted" id="officeLocationAccuracy">Stand at the office (where employees will scan from), then tap this on your own phone/laptop.</small>
++                            </div>
++                            <div class="form-row">
++                                <div class="form-group">
++                                    <label class="text-muted">Office Latitude</label>
++                                    <input type="number" id="officeLat" class="form-control" step="0.000001" placeholder="e.g. 10.315699" onchange="saveSettings()">
++                                </div>
++                                <div class="form-group">
++                                    <label class="text-muted">Office Longitude</label>
++                                    <input type="number" id="officeLng" class="form-control" step="0.000001" placeholder="e.g. 123.885437" onchange="saveSettings()">
++                                </div>
++                            </div>
++                            <div class="form-group">
++                                <label class="text-muted">Allowed Radius (meters)</label>
++                                <input type="number" id="geofenceRadiusM" class="form-control" min="5" step="1" onchange="saveSettings()">
++                                <small class="text-muted">
++                                    Phone GPS is typically only accurate to ~10-30m outdoors and can be much worse indoors -
++                                    a 5m radius will likely reject employees standing right at the office. 30-50m is a safer
++                                    default; the app also auto-adds a small buffer based on each phone's reported GPS accuracy.
++                                </small>
++                            </div>
++                            <div class="alert alert-info mt-2">
++                                <i class="fas fa-shield-halved"></i>
++                                This check runs on the server, not just in the browser, so it can't be bypassed by editing the page.
++                                It stops casual "clock in from home" attempts, but a phone with GPS-spoofing tools enabled could
++                                still fake a location - for stronger guarantees, consider pairing this with a physical NFC tag
++                                or a QR code that only displays at the office.
++                            </div>
++                        </div>
++                    </div>
++
+                     <div class="card">
+                         <div class="card-header">
+                             <h3><i class="fas fa-money-bill"></i> Pay Settings</h3>
+diff --git a/scan.html b/scan.html
+index 14acf57..14022f1 100644
+--- a/scan.html
++++ b/scan.html
+@@ -162,6 +162,26 @@ if (window.supabase && typeof SUPABASE_URL !== 'undefined' && SUPABASE_URL && !S
+ let pin = '';
+ let submitting = false;
+ let employeeName = '';
++let locationPromise = null;
++
++// Kicks off a GPS fix as soon as the page loads, in parallel with the
++// employee lookup, so it's usually already resolved by the time the
++// employee finishes typing their PIN. Resolves to null (never rejects)
++// if location is unavailable, denied, or too slow - the server decides
++// what to do with a missing location.
++function startLocationCapture(timeoutMs = 12000) {
++    return new Promise((resolve) => {
++        if (!navigator.geolocation) return resolve(null);
++        let settled = false;
++        const done = (val) => { if (!settled) { settled = true; resolve(val); } };
++        const timer = setTimeout(() => done(null), timeoutMs);
++        navigator.geolocation.getCurrentPosition(
++            (pos) => { clearTimeout(timer); done({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }); },
++            () => { clearTimeout(timer); done(null); },
++            { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 }
++        );
++    });
++}
+ 
+ function initials(name) {
+     return name.split(' ').filter(Boolean).map(p => p[0]).join('').slice(0, 2).toUpperCase();
+@@ -190,11 +210,27 @@ function renderPinPad() {
+             <div class="key action" data-key="back">&larr;</div>
+         </div>
+         <div class="status-msg" id="statusMsg"></div>
++        <div class="sub" style="margin-top:14px; margin-bottom:0; font-size:12px;">&#128205; Your location is checked to confirm you're at the office.</div>
+     `;
+     document.getElementById('keypad').addEventListener('click', onKeyPress);
+     updateDots();
+ }
+ 
++function renderLocationError(msg) {
++    submitting = false;
++    document.getElementById('card').innerHTML = `
++        <div class="result-icon error" style="font-size:26px;">&#128205;</div>
++        <div class="result-title">Can't Verify Your Location</div>
++        <div class="result-sub">${msg}</div>
++        <button class="btn" onclick="retryAfterLocationError()">Try Again</button>
++    `;
++}
++
++function retryAfterLocationError() {
++    locationPromise = startLocationCapture();
++    renderPinPad();
++}
++
+ function updateDots(shake) {
+     const dots = document.querySelectorAll('.pin-dot');
+     dots.forEach((dot, i) => {
+@@ -234,11 +270,17 @@ function setStatus(msg) {
+ 
+ async function submitPunch() {
+     submitting = true;
++    setStatus('Verifying your location...');
++
++    const loc = await locationPromise;
+     setStatus('Checking...');
+ 
+     const { data, error } = await supabaseClient.rpc('record_attendance_punch', {
+         p_employee_id: employeeId,
+-        p_pin: pin
++        p_pin: pin,
++        p_lat: loc ? loc.lat : null,
++        p_lng: loc ? loc.lng : null,
++        p_accuracy_m: loc ? loc.accuracy : null
+     });
+ 
+     submitting = false;
+@@ -251,9 +293,13 @@ async function submitPunch() {
+     }
+ 
+     if (!data.success) {
+-        pin = '';
+-        updateDots(true);
+-        setStatus(data.message || 'Incorrect PIN.');
++        if (data.reason === 'geofence') {
++            renderLocationError(data.message);
++        } else {
++            pin = '';
++            updateDots(true);
++            setStatus(data.message || 'Incorrect PIN.');
++        }
+         return;
+     }
+ 
+@@ -280,6 +326,8 @@ async function init() {
+         return;
+     }
+ 
++    locationPromise = startLocationCapture();
++
+     const { data, error } = await supabaseClient
+         .from('employees_kiosk_view')
+         .select('first_name, last_name, status')
