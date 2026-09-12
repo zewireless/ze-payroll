@@ -1095,9 +1095,15 @@ function mapDtrFromDb(row) {
         lateMinutes: row.late_minutes || 0,
         status: row.status || 'present',
         source: row.source || 'manual',
+        // Manually set via Edit DTR Entry: pay this day by actual hours
+        // worked (totalHours - otHours, at hourlyRate) instead of the
+        // flat daily/half-day rate. Late deduction and OT are unaffected
+        // either way - see computeEmployeePayroll.
+        hourlyOverride: row.hourly_override || false,
         createdAt: row.created_at
     };
 }
+
 
 async function loadDTR() {
     if (!requireSupabase()) return;
@@ -1295,6 +1301,7 @@ function showDTRAddModal() {
     document.getElementById('dtrOTHours').value = '';
     document.getElementById('dtrLateMinutes').value = '';
     document.getElementById('dtrStatus').value = 'present';
+    document.getElementById('dtrHourlyOverride').checked = false;
     showModal('dtrModal');
 }
 
@@ -1308,6 +1315,7 @@ async function saveDTR() {
     const otHours = parseFloat(document.getElementById('dtrOTHours').value) || 0;
     const lateMinutes = parseInt(document.getElementById('dtrLateMinutes').value) || 0;
     const status = document.getElementById('dtrStatus').value;
+    const hourlyOverride = document.getElementById('dtrHourlyOverride').checked;
     const editId = document.getElementById('dtrEmployee').dataset.editId;
 
     if (!employeeId || !date) {
@@ -1339,6 +1347,7 @@ async function saveDTR() {
         ot_hours: finalOtHours,
         late_minutes: finalLateMinutes,
         status,
+        hourly_override: hourlyOverride,
         source: 'manual'
     };
 
@@ -1374,6 +1383,7 @@ function editDTR(id) {
     document.getElementById('dtrOTHours').value = dtr.otHours || '';
     document.getElementById('dtrLateMinutes').value = dtr.lateMinutes || '';
     document.getElementById('dtrStatus').value = dtr.status;
+    document.getElementById('dtrHourlyOverride').checked = !!dtr.hourlyOverride;
 
     // Store ID for update
     document.getElementById('dtrEmployee').dataset.editId = id;
@@ -2274,10 +2284,19 @@ function savePayrollAdjustment(employeeId, startDate, endDate, adjustment) {
 function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
     const adjustment = getPayrollAdjustment(emp.id, startDate, endDate);
 
+    // Entries manually flagged (via Edit DTR Entry) to be paid by actual
+    // hours worked instead of the flat daily/half-day rate - e.g. an
+    // undertime day (came in late, also left early) where flat day/half
+    // day pay would overpay for the hours actually worked. Late
+    // deduction and OT still apply to these exactly as normal below;
+    // only the base "days worked" pay is computed differently for them.
+    const overrideDtrs = dtrs.filter(d => d.hourlyOverride);
+    const standardDtrs = dtrs.filter(d => !d.hourlyOverride);
+
     // Full days worked. 'late' still counts as a full day worked - the
     // lateness itself is penalized separately below via lateDeduction.
     // 'half_day' is counted separately below since it's paid at half rate.
-    const fullDaysWorked = dtrs.filter(d =>
+    const fullDaysWorked = standardDtrs.filter(d =>
         d.status === 'present' || d.status === 'late'
     ).length;
 
@@ -2289,13 +2308,16 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
     // requiring a minimum hour count here (a late-but-real half day, e.g.
     // 3.98 hrs because the employee was 1 minute late, would otherwise be
     // silently zeroed out).
-    const halfDaysWorked = dtrs.filter(d => d.status === 'half_day').length;
+    const halfDaysWorked = standardDtrs.filter(d => d.status === 'half_day').length;
 
     // Kept for anything downstream (OT cap, rendering, etc.) that expects
-    // a single "days worked" figure. Half days count as 0.5 for that purpose.
+    // a single "days worked" figure. Half days count as 0.5 for that
+    // purpose. Hourly-override days aren't "days" in the flat-rate sense
+    // (see hourlyOverrideHours/hourlyOverridePay below), so they're
+    // tracked separately.
     const daysWorked = fullDaysWorked + (halfDaysWorked * 0.5);
 
-    // Calculate total hours
+    // Calculate total hours (all entries, for display/reporting)
     const totalHours = dtrs.reduce((sum, d) => sum + (d.totalHours || 0), 0);
 
     // Regular hours (capped at 8 hrs/day * daysWorked)
@@ -2308,8 +2330,20 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
     const hourlyRate = emp.hourlyRate || settings.defaultHourlyRate || (dailyRate / 8);
     const baseDailyPay = emp.baseDailyPay || settings.baseDailyPay || dailyRate;
 
+    // Hourly-override pay: actual hours worked (excluding OT, which is
+    // already paid separately via otPay below) times the hourly rate,
+    // instead of a flat daily/half-day rate. E.g. in at 8:01, out at
+    // 12:00 (undertime, 3.98 hrs) pays for 3.98 hrs instead of a flat
+    // half day; in at 2:00 PM, out at 6:00 PM pays 3 regular hours
+    // (2-5 PM) plus 1 OT hour (5-6 PM) via the normal OT calculation.
+    const hourlyOverrideHours = overrideDtrs.reduce(
+        (sum, d) => sum + Math.max(0, (d.totalHours || 0) - (d.otHours || 0)), 0
+    );
+    const hourlyOverridePay = hourlyOverrideHours * hourlyRate;
+
     // Regular pay = daily rate * full days + half daily rate * half days
-    const regularPay = (dailyRate * fullDaysWorked) + (dailyRate * 0.5 * halfDaysWorked);
+    //             + actual-hours pay for any hourly-override entries
+    const regularPay = (dailyRate * fullDaysWorked) + (dailyRate * 0.5 * halfDaysWorked) + hourlyOverridePay;
 
     // OT pay = hourly rate * 1.25 * OT hours (PH law: 125% for OT on regular days)
     const otRate = settings.otRate || (hourlyRate * 1.25);
@@ -2406,6 +2440,8 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
         daysWorked,
         fullDaysWorked,
         halfDaysWorked,
+        hourlyOverrideHours,
+        hourlyOverridePay,
         totalHours,
         regularHours,
         otHours,
@@ -2440,7 +2476,12 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
 }
 
 function renderPayrollRow(tbody, emp, data) {
-    if (data.daysWorked === 0) return;
+    // An employee with no standard days worked AND no hourly-override
+    // pay genuinely has nothing to pay for the period - skip the row.
+    // (Before hourly-override existed, daysWorked alone was enough to
+    // decide this; now an employee whose only entries are hourly-
+    // override days would have daysWorked === 0 but still be owed pay.)
+    if (data.daysWorked === 0 && !data.hourlyOverridePay) return;
 
     const enableStatutory = settings.enableStatutoryDeductions !== false;
 
@@ -2737,6 +2778,14 @@ function generatePayslip(employeeId, startDate, endDate) {
                         <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">${payrollData.halfDaysWorked}</td>
                         <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.dailyRate * 0.5)}</td>
                         <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.dailyRate * 0.5 * payrollData.halfDaysWorked)}</td>
+                    </tr>
+                    ` : ''}
+                    ${payrollData.hourlyOverrideHours > 0 ? `
+                    <tr>
+                        <td style="padding: 6px; border: 1px solid #ddd;">Hourly-Rate Pay (undertime override)</td>
+                        <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">${payrollData.hourlyOverrideHours.toFixed(2)}</td>
+                        <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.hourlyRate)}</td>
+                        <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.hourlyOverridePay)}</td>
                     </tr>
                     ` : ''}
                     ${payrollData.otHours > 0 ? `

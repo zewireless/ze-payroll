@@ -984,6 +984,17 @@
                         <option value="half_day">Half Day</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
+                        <input type="checkbox" id="dtrHourlyOverride" style="width: auto;">
+                        Pay by actual hours worked (undertime override)
+                    </label>
+                    <small class="text-muted">
+                        Instead of a flat full/half-day rate, pay Total Hours (minus any OT hours) &times; hourly rate.
+                        Late deduction and OT are calculated exactly the same either way - use this when someone
+                        clocked in and out within a schedule window but didn't complete it (e.g. left early).
+                    </small>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('dtrModal')">Cancel</button>
