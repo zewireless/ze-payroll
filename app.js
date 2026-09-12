@@ -2596,13 +2596,19 @@ function saveDeductionsAdjustment() {
     showToast('Deductions updated for this pay period.', 'success');
 }
 
-function processPayroll() {
+async function processPayroll() {
     const monthFilter = document.getElementById('payrollMonthFilter')?.value;
     if (!monthFilter) {
         showToast('Please select a month first!', 'error');
         return;
     }
 
+    // Pull the latest DTR entries from Supabase before computing - without
+    // this, kiosk (scan.html) and camera-scan punches that landed after
+    // this tab's `dtrEntries` was last populated (page load, or the last
+    // realtime event) would be silently excluded from the computed payroll
+    // even though they're already saved in the database.
+    await loadDTR();
     loadPayroll();
 
     // Save processed payroll records
@@ -3347,7 +3353,12 @@ function navigateTo(page) {
 
     // Load data when navigating
     if (page === 'dtr') loadDTR();
-    if (page === 'payroll') loadPayroll();
+    // Payroll is computed from the in-memory `dtrEntries` array, which is
+    // only otherwise refreshed by realtime sync or by visiting the DTR
+    // page. Refetch here so kiosk (scan.html) and camera-scan punches
+    // that arrived while this tab was open elsewhere are never missed
+    // just because the admin went straight to Payroll.
+    if (page === 'payroll') loadDTR().then(loadPayroll);
     if (page === 'reports') generateReport();
 }
 
