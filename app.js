@@ -200,7 +200,11 @@ const defaultSettings = {
     defaultDailyRate: 400.00,
     defaultHourlyRate: 50.00,
     defaultPosition: 'Employee',
-    enableStatutoryDeductions: true,
+        enableStatutoryDeductions: true,
+    // Hides the SSS/PhilHealth/Pag-IBIG line items (and the employer-share
+    // reference block) on the printed payslip. The deductions still happen
+    // in payroll totals/net pay - this only affects what's shown on the slip.
+    hideStatutoryOnPayslip: false,
     // Global statutory deduction overrides - apply to ALL employees unless
     // a specific employee/period has its own override set in the payroll
     // "Edit Deductions" modal (which always wins over these).
@@ -446,8 +450,9 @@ function loadSettings() {
     document.getElementById('defaultDailyRate').value = settings.defaultDailyRate || 400.00;
     document.getElementById('defaultHourlyRate').value = settings.defaultHourlyRate || 50.00;
     document.getElementById('defaultPosition').value = settings.defaultPosition || 'Employee';
+    
     document.getElementById('enableStatutoryDeductions').checked = settings.enableStatutoryDeductions !== false;
-
+    document.getElementById('hideStatutoryOnPayslip').checked = !!settings.hideStatutoryOnPayslip;
     // Statutory deduction override modes
     document.getElementById('sssMode').value = settings.sssMode || 'auto';
     document.getElementById('sssFixedAmount').value = settings.sssFixedAmount || 0;
@@ -496,8 +501,9 @@ function saveSettings() {
     settings.defaultDailyRate = parseFloat(document.getElementById('defaultDailyRate').value) || 0;
     settings.defaultHourlyRate = parseFloat(document.getElementById('defaultHourlyRate').value) || 0;
     settings.defaultPosition = document.getElementById('defaultPosition').value;
-    settings.enableStatutoryDeductions = document.getElementById('enableStatutoryDeductions').checked;
 
+    settings.enableStatutoryDeductions = document.getElementById('enableStatutoryDeductions').checked;
+    settings.hideStatutoryOnPayslip = document.getElementById('hideStatutoryOnPayslip').checked;
     // Statutory deduction override modes (global defaults for all employees)
     settings.sssMode = document.getElementById('sssMode').value;
     settings.sssFixedAmount = parseFloat(document.getElementById('sssFixedAmount').value) || 0;
@@ -2633,7 +2639,7 @@ function generatePayslip(employeeId, startDate, endDate) {
                         <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.lateDeduction)}</td>
                     </tr>
                     ` : ''}
-                    ${settings.enableStatutoryDeductions !== false ? `
+                    ${settings.enableStatutoryDeductions !== false && !settings.hideStatutoryOnPayslip ? `
                     <tr>
                         <td style="padding: 6px; border: 1px solid #ddd;">SSS Contribution</td>
                         <td style="text-align: right; padding: 6px; border: 1px solid #ddd;">₱${formatNumber(payrollData.sssDeduction)}</td>
@@ -2666,7 +2672,7 @@ function generatePayslip(employeeId, startDate, endDate) {
                 <p style="margin: 0; font-size: 28px; font-weight: bold; color: #2563eb;">₱${formatNumber(payrollData.netPay)}</p>
             </div>
 
-            ${settings.enableStatutoryDeductions !== false ? `
+            ${settings.enableStatutoryDeductions !== false && !settings.hideStatutoryOnPayslip ? `
             <!-- Employer Share (for reference) -->
             <div style="margin-top: 20px; padding: 12px; background: #f0f0f0; border-radius: 4px; font-size: 11px;">
                 <strong>Employer Contributions (for reference):</strong><br>
