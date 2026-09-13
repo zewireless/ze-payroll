@@ -401,8 +401,8 @@
             <li><a href="#faq">FAQ</a></li>
         </ul>
         <div class="nav-actions">
-            <a href="index.html" class="btn btn-ghost">Login</a>
-            <a href="index.html?plan=trial" class="btn btn-lime">Start Free Trial</a>
+            <a href="app.html" class="btn btn-ghost">Login</a>
+            <a href="app.html?plan=trial" class="btn btn-lime">Start Free Trial</a>
             <button class="nav-toggle" id="navToggle" aria-label="Toggle menu" aria-expanded="false">
                 <i class="fas fa-bars"></i>
             </button>
@@ -418,8 +418,8 @@
             <h1>Your team clocks in. Payroll takes it from there.</h1>
             <p class="lead">ZE Payroll turns QR time-ins and DTRs straight into ready-to-send payslips — overtime, late deductions, SSS, PhilHealth, and Pag-IBIG computed automatically, every cutoff.</p>
             <div class="hero-ctas">
-                <a href="index.html?plan=trial" class="btn btn-lime btn-lg">Start Free Trial</a>
-                <a href="index.html" class="btn btn-ghost btn-lg">Login</a>
+                <a href="app.html?plan=trial" class="btn btn-lime btn-lg">Start Free Trial</a>
+                <a href="app.html" class="btn btn-ghost btn-lg">Login</a>
             </div>
             <p class="hero-note">5 days free · no card required · switch plans anytime</p>
             <div class="hero-stats">
@@ -631,7 +631,7 @@
                     <li><i class="fas fa-check"></i> Automated payroll & payslips</li>
                     <li><i class="fas fa-check"></i> PH statutory deductions</li>
                 </ul>
-                <a href="index.html?plan=trial" class="btn btn-ghost btn-block">Start Free Trial</a>
+                <a href="app.html?plan=trial" class="btn btn-ghost btn-block">Start Free Trial</a>
             </div>
 
             <div class="price-card">
@@ -645,7 +645,7 @@
                     <li><i class="fas fa-check"></i> PH statutory deductions</li>
                     <li><i class="fas fa-check"></i> Email support</li>
                 </ul>
-                <a href="index.html?plan=3mo" class="btn btn-outline-dark btn-block" style="color:#fff; border-color:rgba(255,255,255,.25);">Choose 3 Months</a>
+                <a href="app.html?plan=3mo" class="btn btn-outline-dark btn-block" style="color:#fff; border-color:rgba(255,255,255,.25);">Choose 3 Months</a>
             </div>
 
             <div class="price-card featured">
@@ -660,7 +660,7 @@
                     <li><i class="fas fa-check"></i> PH statutory deductions</li>
                     <li><i class="fas fa-check"></i> Priority email support</li>
                 </ul>
-                <a href="index.html?plan=6mo" class="btn btn-lime btn-block">Choose 6 Months</a>
+                <a href="app.html?plan=6mo" class="btn btn-lime btn-block">Choose 6 Months</a>
             </div>
 
         </div>
@@ -712,8 +712,8 @@
             <h2>Run your next cutoff without the spreadsheet.</h2>
             <p>Five days, full access, nothing to install for your team beyond a QR code.</p>
             <div class="hero-ctas">
-                <a href="index.html?plan=trial" class="btn btn-lime btn-lg">Start Free Trial</a>
-                <a href="index.html" class="btn btn-ghost btn-lg" style="border-color:rgba(255,255,255,.3);">Login</a>
+                <a href="app.html?plan=trial" class="btn btn-lime btn-lg">Start Free Trial</a>
+                <a href="app.html" class="btn btn-ghost btn-lg" style="border-color:rgba(255,255,255,.3);">Login</a>
             </div>
         </div>
     </div>
@@ -740,8 +740,8 @@
             <div class="foot-col">
                 <h4>Account</h4>
                 <ul>
-                    <li><a href="index.html">Login</a></li>
-                    <li><a href="index.html?plan=trial">Start Free Trial</a></li>
+                    <li><a href="app.html">Login</a></li>
+                    <li><a href="app.html?plan=trial">Start Free Trial</a></li>
                 </ul>
             </div>
             <div class="foot-col">
@@ -822,7 +822,7 @@
         setTimeout(runCounter, 500);
     }
 
-    // Remember which plan someone picked so index.html can read it later
+    // Remember which plan someone picked so app.html can read it later
     document.querySelectorAll('a[href*="plan="]').forEach(a => {
         a.addEventListener('click', () => {
             const plan = new URL(a.href, window.location.href).searchParams.get('plan');

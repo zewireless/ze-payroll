@@ -122,10 +122,10 @@ index 190068b..5372513 100644
  }
  
  function saveCompanySettings() {
-diff --git a/index.html b/index.html
+diff --git a/app.html b/app.html
 index bb4321f..32027a7 100644
---- a/index.html
-+++ b/index.html
+--- a/app.html
++++ b/app.html
 @@ -499,6 +499,53 @@
                          </div>
                      </div>

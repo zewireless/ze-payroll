@@ -56,16 +56,13 @@ A complete, functional payroll management system built with HTML, CSS, and JavaS
 
 ## How to Use
 
-1. Open `index.html` in a web browser
-2. All data is stored locally in browser's localStorage
+1. Open `index.html` in a web browser to see the marketing/landing page, or go straight to `app.html` for the payroll dashboard
+2. Sign in on `app.html` with the admin account created in Supabase Auth
 3. Use the sidebar navigation to access different pages
 
 ## Data Persistence
 
-All data is saved to the browser's localStorage:
-- Settings
-- Employee records
-- DTR entries
+Employees and DTR entries live in Supabase (see `supabase/migrations`), so a kiosk scan and the admin dashboard read/write the same data live. Settings and payroll run history still live in the browser's localStorage.
 
 Export data to JSON for backup. Import to restore or transfer data.
 
@@ -86,8 +83,12 @@ On first load, the system creates 3 sample employees:
 
 ```
 payroll-system/
-├── index.html    # Main HTML structure
-├── styles.css    # All styling
-├── app.js        # Application logic
+├── index.html    # Marketing/landing page (public entry point)
+├── app.html       # The payroll dashboard itself (Dashboard, Employees, DTR, QR Scanner, Payroll, Reports, Settings) - linked from index.html's Login / Start Free Trial buttons
+├── scan.html      # Standalone kiosk page employees hit via their personal QR code, to log Time In/Out
+├── styles.css    # Styling for app.html
+├── app.js        # Application logic for app.html
+├── supabase-config.js  # Supabase project URL/anon key (copy from supabase-config.example.js)
+├── supabase/     # Supabase migrations
 └── README.md     # This file
 ```

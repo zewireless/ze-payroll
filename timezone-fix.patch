@@ -620,10 +620,10 @@ index b87eeaf..b65067e 100644
      document.body.appendChild(a);
      a.click();
      document.body.removeChild(a);
-diff --git a/index.html b/index.html
+diff --git a/app.html b/app.html
 index a182ad5..85419af 100644
---- a/index.html
-+++ b/index.html
+--- a/app.html
++++ b/app.html
 @@ -343,6 +343,51 @@
              <!-- Settings Page -->
              <div class="page" id="page-settings">
