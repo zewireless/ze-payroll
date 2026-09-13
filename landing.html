@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZE Payroll — Attendance to Payslip, Automatically</title>
+<meta name="description" content="ZE Payroll turns QR time-ins and DTRs into ready-to-send payslips, with PH statutory deductions and OT rules handled automatically.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+    :root{
+        --ink:#0b1020;
+        --ink-soft:#131a30;
+        --ink-line:rgba(255,255,255,.09);
+        --paper:#f6f7fb;
+        --paper-dim:#eceff8;
+        --card:#ffffff;
+        --blue:#2563eb;
+        --blue-deep:#17419e;
+        --blue-bright:#3b82f6;
+        --lime:#c3ff4d;
+        --lime-deep:#8fd400;
+        --on-dark:#eef1fb;
+        --on-dark-dim:#9aa4c4;
+        --on-light:#0f1430;
+        --on-light-dim:#5b6280;
+        --radius:16px;
+        --radius-sm:10px;
+        --shadow:0 24px 60px -24px rgba(11,16,32,.45);
+        --shadow-sm:0 10px 24px -12px rgba(11,16,32,.25);
+        --display:'Space Grotesk', sans-serif;
+        --body:'Manrope', sans-serif;
+    }
+    *{box-sizing:border-box; margin:0; padding:0;}
+    html{scroll-behavior:smooth;}
+    body{
+        font-family:var(--body);
+        color:var(--on-light);
+        background:var(--paper);
+        line-height:1.55;
+        -webkit-font-smoothing:antialiased;
+    }
+    img,svg{display:block; max-width:100%;}
+    a{color:inherit; text-decoration:none;}
+    ul{list-style:none;}
+    button{font-family:inherit; cursor:pointer;}
+    .wrap{max-width:1180px; margin:0 auto; padding:0 24px;}
+    h1,h2,h3,h4{font-family:var(--display); letter-spacing:-0.01em;}
+    ::selection{background:var(--lime); color:var(--ink);}
+
+    /* ---------- focus visibility ---------- */
+    a:focus-visible, button:focus-visible{
+        outline:2px solid var(--blue-bright);
+        outline-offset:3px;
+        border-radius:6px;
+    }
+
+    /* reduced motion */
+    @media (prefers-reduced-motion: reduce){
+        *{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; scroll-behavior:auto !important;}
+    }
+
+    /* ============ NAVBAR ============ */
+    .nav{
+        position:fixed; top:0; left:0; right:0; z-index:200;
+        padding:20px 0;
+        transition:padding .35s ease, background .35s ease, box-shadow .35s ease;
+    }
+    .nav-inner{
+        display:flex; align-items:center; justify-content:space-between; gap:20px;
+        background:rgba(11,16,32,.32);
+        border:1px solid rgba(255,255,255,.08);
+        backdrop-filter:blur(14px);
+        -webkit-backdrop-filter:blur(14px);
+        border-radius:16px;
+        padding:12px 18px;
+        transition:background .35s ease, box-shadow .35s ease, border-color .35s ease, padding .35s ease;
+    }
+    .nav.scrolled{padding:12px 0;}
+    .nav.scrolled .nav-inner{
+        background:rgba(9,13,26,.82);
+        box-shadow:0 14px 34px -18px rgba(0,0,0,.55);
+        border-color:rgba(255,255,255,.12);
+        padding:9px 18px;
+    }
+    .brand{display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:700; font-size:18px; color:var(--on-dark);}
+    .brand-mark{
+        width:34px; height:34px; border-radius:9px;
+        background:linear-gradient(135deg, var(--blue-bright), var(--blue-deep));
+        display:flex; align-items:center; justify-content:center;
+        font-family:var(--display); font-weight:700; font-size:16px; color:#fff;
+        box-shadow:0 6px 16px -6px rgba(37,99,235,.7);
+    }
+    .nav-links{display:flex; align-items:center; gap:28px;}
+    .nav-links a{
+        font-size:14.5px; font-weight:500; color:var(--on-dark-dim);
+        transition:color .2s ease;
+    }
+    .nav-links a:hover{color:var(--on-dark);}
+    .nav-actions{display:flex; align-items:center; gap:10px;}
+    .nav-toggle{
+        display:none; width:38px; height:38px; border-radius:9px; border:1px solid var(--ink-line);
+        background:transparent; color:var(--on-dark); align-items:center; justify-content:center; font-size:16px;
+    }
+
+    /* ---------- buttons ---------- */
+    .btn{
+        display:inline-flex; align-items:center; justify-content:center; gap:8px;
+        border:none; border-radius:10px; font-weight:600; font-size:14.5px;
+        padding:11px 20px; white-space:nowrap; transition:transform .18s ease, box-shadow .18s ease, background .18s ease, color .18s ease;
+    }
+    .btn:active{transform:translateY(1px);}
+    .btn-ghost{background:transparent; color:var(--on-dark); border:1px solid rgba(255,255,255,.18);}
+    .btn-ghost:hover{background:rgba(255,255,255,.08);}
+    .btn-lime{background:var(--lime); color:#132000;}
+    .btn-lime:hover{background:var(--lime-deep); box-shadow:0 10px 24px -8px rgba(140,220,0,.55);}
+    .btn-primary{background:var(--blue); color:#fff;}
+    .btn-primary:hover{background:var(--blue-deep); box-shadow:0 10px 24px -8px rgba(37,99,235,.55);}
+    .btn-outline-dark{background:transparent; color:var(--on-light); border:1px solid rgba(15,20,48,.16);}
+    .btn-outline-dark:hover{background:rgba(15,20,48,.05);}
+    .btn-block{width:100%;}
+    .btn-lg{padding:14px 26px; font-size:15.5px;}
+
+    /* ============ HERO ============ */
+    .hero{
+        position:relative; overflow:hidden;
+        background:
+            radial-gradient(60% 55% at 82% 8%, rgba(37,99,235,.35), transparent 60%),
+            radial-gradient(45% 40% at 8% 92%, rgba(195,255,77,.12), transparent 60%),
+            linear-gradient(180deg, var(--ink) 0%, var(--ink-soft) 100%);
+        padding:168px 0 120px;
+        color:var(--on-dark);
+    }
+    .hero-grid{
+        display:grid; grid-template-columns:1.05fr .95fr; gap:56px; align-items:center;
+    }
+    .eyebrow-pill{
+        display:inline-flex; align-items:center; gap:8px;
+        border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.04);
+        border-radius:999px; padding:7px 14px; font-size:13px; color:var(--on-dark-dim); margin-bottom:22px;
+    }
+    .eyebrow-pill .dot{width:7px; height:7px; border-radius:50%; background:var(--lime); box-shadow:0 0 0 0 rgba(195,255,77,.6); animation:pulse-dot 2.2s ease-in-out infinite;}
+    @keyframes pulse-dot{
+        0%{box-shadow:0 0 0 0 rgba(195,255,77,.55);}
+        70%{box-shadow:0 0 0 9px rgba(195,255,77,0);}
+        100%{box-shadow:0 0 0 0 rgba(195,255,77,0);}
+    }
+    .hero h1{
+        font-size:clamp(34px, 4.6vw, 58px); font-weight:700; line-height:1.06; letter-spacing:-0.02em;
+        max-width:19ch;
+    }
+    .hero p.lead{
+        margin-top:22px; font-size:17.5px; color:var(--on-dark-dim); max-width:46ch;
+    }
+    .hero-ctas{display:flex; align-items:center; gap:14px; margin-top:34px; flex-wrap:wrap;}
+    .hero-note{margin-top:16px; font-size:13px; color:var(--on-dark-dim);}
+    .hero-stats{display:flex; gap:34px; margin-top:52px; flex-wrap:wrap;}
+    .hero-stat b{display:block; font-family:var(--display); font-size:24px; color:#fff;}
+    .hero-stat span{font-size:13px; color:var(--on-dark-dim);}
+
+    /* ---- floating payslip mock in hero ---- */
+    .hero-visual{position:relative; height:460px;}
+    .float-card{
+        position:absolute; border-radius:var(--radius); background:var(--card);
+        box-shadow:var(--shadow); color:var(--on-light); overflow:hidden;
+    }
+    .payslip-card{
+        width:320px; right:10px; top:6px; padding:22px;
+        animation:float-a 7s ease-in-out infinite;
+    }
+    .payslip-head{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px;}
+    .payslip-head b{font-family:var(--display); font-size:15px;}
+    .payslip-head span{font-size:11.5px; color:var(--on-light-dim);}
+    .payslip-badge{background:#e8f7ee; color:#0f9d58; font-size:11px; font-weight:700; border-radius:999px; padding:3px 9px;}
+    .payslip-row{display:flex; justify-content:space-between; font-size:12.5px; padding:7px 0; border-bottom:1px dashed rgba(15,20,48,.1);}
+    .payslip-row span:first-child{color:var(--on-light-dim);}
+    .payslip-net{display:flex; justify-content:space-between; align-items:baseline; margin-top:14px; padding-top:14px; border-top:1px solid rgba(15,20,48,.1);}
+    .payslip-net span{font-size:12.5px; color:var(--on-light-dim);}
+    .payslip-net b{font-family:var(--display); font-size:22px; color:var(--blue-deep);}
+
+    .qr-card{
+        width:190px; left:0; bottom:26px; padding:16px; text-align:center;
+        animation:float-b 6s ease-in-out infinite;
+    }
+    .qr-card .qr-box{
+        width:100%; aspect-ratio:1; border-radius:10px; margin-bottom:10px;
+        background:
+            repeating-linear-gradient(90deg, #0f1430 0 6px, transparent 6px 12px),
+            repeating-linear-gradient(0deg, #0f1430 0 6px, transparent 6px 12px);
+        background-blend-mode:multiply; background-color:#fff;
+        opacity:.9;
+    }
+    .qr-card p{font-size:11.5px; font-weight:600;}
+    .qr-card small{font-size:10.5px; color:var(--on-light-dim);}
+    .scan-toast{
+        position:absolute; left:150px; bottom:118px; width:198px; padding:12px 14px;
+        display:flex; gap:10px; align-items:center; animation:float-c 5.5s ease-in-out infinite;
+    }
+    .scan-toast i{color:#0f9d58;}
+    .scan-toast b{display:block; font-size:12px;}
+    .scan-toast span{font-size:10.5px; color:var(--on-light-dim);}
+
+    @keyframes float-a{0%,100%{transform:translateY(0px);}50%{transform:translateY(-14px);}}
+    @keyframes float-b{0%,100%{transform:translateY(0px);}50%{transform:translateY(10px);}}
+    @keyframes float-c{0%,100%{transform:translateY(0px);}50%{transform:translateY(-9px);}}
+
+    /* ============ SECTION SCAFFOLDING ============ */
+    section{padding:108px 0;}
+    .section-head{max-width:640px; margin-bottom:56px;}
+    .section-head .kicker{font-size:14px; font-weight:600; color:var(--blue);}
+    .section-head h2{font-size:clamp(28px, 3.2vw, 40px); margin-top:10px; line-height:1.12;}
+    .section-head p{margin-top:14px; font-size:16px; color:var(--on-light-dim);}
+    .section-head.on-dark p{color:var(--on-dark-dim);}
+    .section-head.on-dark .kicker{color:var(--lime);}
+
+    /* ============ FEATURES ============ */
+    .feat-grid{display:grid; grid-template-columns:repeat(3, 1fr); gap:26px;}
+    .feat-card{
+        background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow-sm);
+        overflow:hidden; display:flex; flex-direction:column;
+        border:1px solid rgba(15,20,48,.05);
+    }
+    .feat-visual{
+        height:168px; padding:16px; background:var(--paper-dim);
+        display:flex; align-items:center; justify-content:center;
+        border-bottom:1px solid rgba(15,20,48,.06);
+    }
+    .feat-body{padding:22px 22px 26px;}
+    .feat-body h3{font-size:17px; margin-bottom:8px;}
+    .feat-body p{font-size:14px; color:var(--on-light-dim);}
+
+    /* mini-mockup: dashboard */
+    .mock-dash{width:100%; display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+    .mock-stat{background:#fff; border-radius:8px; padding:8px 10px; box-shadow:0 4px 10px -6px rgba(15,20,48,.2);}
+    .mock-stat b{display:block; font-family:var(--display); font-size:15px; color:var(--blue-deep);}
+    .mock-stat span{font-size:9.5px; color:var(--on-light-dim);}
+
+    /* mini-mockup: employees table */
+    .mock-emp{width:100%; background:#fff; border-radius:8px; padding:9px; box-shadow:0 4px 10px -6px rgba(15,20,48,.2);}
+    .mock-emp-row{display:flex; align-items:center; gap:8px; padding:5px 0;}
+    .mock-avatar{width:20px; height:20px; border-radius:50%; background:var(--blue); flex-shrink:0;}
+    .mock-emp-row .bar{height:6px; border-radius:4px; background:var(--paper-dim); flex:1;}
+    .mock-emp-row .badge-mini{font-size:8px; font-weight:700; padding:2px 6px; border-radius:999px; background:#e8f7ee; color:#0f9d58;}
+
+    /* mini-mockup: DTR grid with sunday OT */
+    .mock-dtr{width:100%; background:#fff; border-radius:8px; padding:9px; box-shadow:0 4px 10px -6px rgba(15,20,48,.2);}
+    .mock-dtr-row{display:grid; grid-template-columns:repeat(7, 1fr); gap:3px; margin-bottom:4px;}
+    .mock-dtr-cell{aspect-ratio:1; border-radius:4px; background:var(--paper-dim);}
+    .mock-dtr-cell.on{background:var(--blue-bright); opacity:.85;}
+    .mock-dtr-cell.sun{background:var(--lime);}
+    .mock-dtr-label{font-size:8.5px; color:var(--on-light-dim); display:flex; justify-content:space-between; margin-top:4px;}
+
+    /* mini-mockup: QR scan */
+    .mock-qr{display:flex; flex-direction:column; align-items:center; gap:8px;}
+    .mock-qr-box{width:78px; height:78px; border-radius:8px; background:#fff; box-shadow:0 4px 10px -6px rgba(15,20,48,.25);
+        background-image:repeating-linear-gradient(90deg,#0f1430 0 5px, transparent 5px 10px), repeating-linear-gradient(0deg,#0f1430 0 5px, transparent 5px 10px);
+        background-blend-mode:multiply; background-color:#fff;}
+    .mock-qr-pill{font-size:10px; font-weight:700; background:#fff; padding:5px 10px; border-radius:999px; box-shadow:0 4px 10px -6px rgba(15,20,48,.25); color:#0f9d58;}
+
+    /* mini-mockup: payroll computation */
+    .mock-pay{width:100%; background:#fff; border-radius:8px; padding:10px; box-shadow:0 4px 10px -6px rgba(15,20,48,.2);}
+    .mock-pay-row{display:flex; justify-content:space-between; font-size:9.5px; padding:3.5px 0; color:var(--on-light-dim); border-bottom:1px dashed rgba(15,20,48,.08);}
+    .mock-pay-row b{color:var(--on-light); font-weight:700;}
+    .mock-pay-total{display:flex; justify-content:space-between; font-size:11px; font-weight:800; padding-top:6px; color:var(--blue-deep);}
+
+    /* mini-mockup: payslip/report */
+    .mock-slip{width:100%; background:#fff; border-radius:8px; padding:10px; box-shadow:0 4px 10px -6px rgba(15,20,48,.2); position:relative;}
+    .mock-slip .line{height:5px; border-radius:3px; background:var(--paper-dim); margin-bottom:6px;}
+    .mock-slip .line.w60{width:60%;}
+    .mock-slip .line.w80{width:80%;}
+    .mock-slip .dl{position:absolute; right:10px; bottom:10px; width:26px; height:26px; border-radius:50%; background:var(--blue); display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px;}
+
+    /* ============ HOW IT WORKS ============ */
+    .how-wrap{
+        background:linear-gradient(180deg, var(--paper) 0%, var(--paper-dim) 100%);
+    }
+    .how-steps{position:relative; display:grid; grid-template-columns:repeat(4,1fr); gap:22px;}
+    .how-steps::before{
+        content:''; position:absolute; top:27px; left:12%; right:12%; height:2px;
+        background:repeating-linear-gradient(90deg, rgba(15,20,48,.16) 0 8px, transparent 8px 16px);
+        z-index:0;
+    }
+    .how-step{position:relative; z-index:1;}
+    .how-num{
+        width:54px; height:54px; border-radius:50%; background:var(--card); border:1px solid rgba(15,20,48,.08);
+        display:flex; align-items:center; justify-content:center; font-family:var(--display); font-weight:700; font-size:19px;
+        color:var(--blue-deep); box-shadow:var(--shadow-sm); margin-bottom:18px;
+    }
+    .how-step h3{font-size:16px; margin-bottom:8px;}
+    .how-step p{font-size:13.5px; color:var(--on-light-dim);}
+
+    /* ============ PRICING ============ */
+    .pricing-wrap{
+        background:linear-gradient(180deg, var(--ink) 0%, var(--ink-soft) 100%); color:var(--on-dark);
+    }
+    .price-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:24px; align-items:stretch;}
+    .price-card{
+        background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:var(--radius);
+        padding:30px 26px; display:flex; flex-direction:column;
+    }
+    .price-card.featured{
+        background:linear-gradient(165deg, rgba(195,255,77,.1), rgba(255,255,255,.04));
+        border-color:rgba(195,255,77,.4);
+        position:relative;
+    }
+    .price-tag{
+        position:absolute; top:-13px; left:26px; background:var(--lime); color:#132000;
+        font-size:11.5px; font-weight:700; padding:4px 12px; border-radius:999px;
+    }
+    .price-name{font-size:14.5px; font-weight:600; color:var(--on-dark-dim); margin-bottom:14px;}
+    .price-amount{display:flex; align-items:baseline; gap:6px; margin-bottom:4px;}
+    .price-amount b{font-family:var(--display); font-size:42px;}
+    .price-amount span{font-size:14px; color:var(--on-dark-dim);}
+    .price-sub{font-size:12.5px; color:var(--on-dark-dim); margin-bottom:22px;}
+    .price-feats{margin-bottom:28px; flex:1;}
+    .price-feats li{display:flex; gap:9px; align-items:flex-start; font-size:13.5px; padding:6px 0; color:var(--on-dark-dim);}
+    .price-feats li i{color:var(--lime); margin-top:3px; font-size:12px;}
+
+    /* ============ FAQ ============ */
+    .faq-list{max-width:760px;}
+    .faq-item{border-bottom:1px solid rgba(15,20,48,.1);}
+    .faq-q{
+        width:100%; background:none; border:none; text-align:left; padding:20px 0;
+        display:flex; justify-content:space-between; align-items:center; gap:20px;
+        font-family:var(--display); font-size:16px; font-weight:600; color:var(--on-light);
+    }
+    .faq-q i{transition:transform .25s ease; color:var(--blue); flex-shrink:0;}
+    .faq-item.open .faq-q i{transform:rotate(45deg);}
+    .faq-a{max-height:0; overflow:hidden; transition:max-height .3s ease;}
+    .faq-a p{padding-bottom:20px; font-size:14.5px; color:var(--on-light-dim); max-width:64ch;}
+
+    /* ============ FINAL CTA ============ */
+    .cta-band{
+        background:linear-gradient(120deg, var(--blue-deep), var(--blue));
+        border-radius:24px; padding:56px; color:#fff; text-align:center;
+        position:relative; overflow:hidden;
+    }
+    .cta-band::after{
+        content:''; position:absolute; inset:0;
+        background:radial-gradient(40% 60% at 85% 20%, rgba(195,255,77,.25), transparent 60%);
+    }
+    .cta-band h2{position:relative; font-size:clamp(24px,3vw,34px); margin-bottom:14px;}
+    .cta-band p{position:relative; color:rgba(255,255,255,.82); margin-bottom:26px; max-width:50ch; margin-left:auto; margin-right:auto;}
+    .cta-band .hero-ctas{position:relative; justify-content:center;}
+
+    /* ============ FOOTER ============ */
+    footer{background:var(--ink); color:var(--on-dark-dim); padding:64px 0 28px; font-size:13.5px;}
+    .foot-grid{display:grid; grid-template-columns:1.4fr 1fr 1fr 1fr; gap:36px; padding-bottom:40px; border-bottom:1px solid var(--ink-line);}
+    .foot-brand p{margin-top:14px; max-width:32ch;}
+    .foot-col h4{font-family:var(--body); font-size:13px; color:var(--on-dark); margin-bottom:14px; font-weight:700;}
+    .foot-col li{padding:5px 0;}
+    .foot-col a:hover{color:var(--on-dark);}
+    .foot-bottom{display:flex; justify-content:space-between; align-items:center; padding-top:24px; flex-wrap:wrap; gap:10px;}
+
+    /* ============ RESPONSIVE ============ */
+    @media (max-width:960px){
+        .hero-grid{grid-template-columns:1fr;}
+        .hero-visual{height:380px; max-width:460px; margin:0 auto;}
+        .feat-grid{grid-template-columns:repeat(2,1fr);}
+        .how-steps{grid-template-columns:repeat(2,1fr); row-gap:34px;}
+        .how-steps::before{display:none;}
+        .price-grid{grid-template-columns:1fr; max-width:420px; margin:0 auto;}
+        .foot-grid{grid-template-columns:1fr 1fr;}
+    }
+    @media (max-width:720px){
+        .nav-links{
+            position:fixed; top:82px; left:16px; right:16px;
+            background:rgba(9,13,26,.97); border:1px solid rgba(255,255,255,.1);
+            border-radius:14px; padding:10px 6px; flex-direction:column; align-items:stretch; gap:0;
+            transform:translateY(-14px); opacity:0; visibility:hidden; pointer-events:none;
+            transition:all .25s ease;
+        }
+        .nav-links.open{transform:translateY(0); opacity:1; visibility:visible; pointer-events:auto;}
+        .nav-links a{padding:13px 14px; border-radius:8px;}
+        .nav-links a:hover{background:rgba(255,255,255,.06);}
+        .nav-actions .btn-ghost{display:none;}
+        .nav-toggle{display:flex;}
+        .feat-grid{grid-template-columns:1fr;}
+        .how-steps{grid-template-columns:1fr;}
+        .foot-grid{grid-template-columns:1fr; gap:26px;}
+        .cta-band{padding:40px 24px;}
+        section{padding:76px 0;}
+    }
+</style>
+</head>
+<body>
+
+<!-- ============ NAVBAR ============ -->
+<nav class="nav" id="siteNav">
+    <div class="wrap nav-inner">
+        <a href="#top" class="brand">
+            <span class="brand-mark">ZE</span>
+            ZE Payroll
+        </a>
+        <ul class="nav-links" id="navLinks">
+            <li><a href="#features">Features</a></li>
+            <li><a href="#how-it-works">How It Works</a></li>
+            <li><a href="#pricing">Pricing</a></li>
+            <li><a href="#faq">FAQ</a></li>
+        </ul>
+        <div class="nav-actions">
+            <a href="index.html" class="btn btn-ghost">Login</a>
+            <a href="index.html?plan=trial" class="btn btn-lime">Start Free Trial</a>
+            <button class="nav-toggle" id="navToggle" aria-label="Toggle menu" aria-expanded="false">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+    </div>
+</nav>
+
+<!-- ============ HERO ============ -->
+<header class="hero" id="top">
+    <div class="wrap hero-grid">
+        <div>
+            <div class="eyebrow-pill"><span class="dot"></span> Built for Philippine payroll rules</div>
+            <h1>Your team clocks in. Payroll takes it from there.</h1>
+            <p class="lead">ZE Payroll turns QR time-ins and DTRs straight into ready-to-send payslips — overtime, late deductions, SSS, PhilHealth, and Pag-IBIG computed automatically, every cutoff.</p>
+            <div class="hero-ctas">
+                <a href="index.html?plan=trial" class="btn btn-lime btn-lg">Start Free Trial</a>
+                <a href="index.html" class="btn btn-ghost btn-lg">Login</a>
+            </div>
+            <p class="hero-note">5 days free · no card required · switch plans anytime</p>
+            <div class="hero-stats">
+                <div class="hero-stat"><b>3</b><span>Ways to clock in</span></div>
+                <div class="hero-stat"><b>100%</b><span>Automatic OT & Sunday rules</span></div>
+                <div class="hero-stat"><b>&lt; 5 min</b><span>To run a full cutoff</span></div>
+            </div>
+        </div>
+
+        <div class="hero-visual" aria-hidden="true">
+            <div class="float-card payslip-card">
+                <div class="payslip-head">
+                    <div>
+                        <b>Payslip — Sep 16–30</b>
+                        <span>Maria Santos · Cashier</span>
+                    </div>
+                    <span class="payslip-badge">Ready</span>
+                </div>
+                <div class="payslip-row"><span>Basic Pay (10 days)</span><span>₱5,000.00</span></div>
+                <div class="payslip-row"><span>Overtime (incl. Sunday)</span><span>₱875.00</span></div>
+                <div class="payslip-row"><span>SSS / PhilHealth / Pag-IBIG</span><span>-₱312.50</span></div>
+                <div class="payslip-net">
+                    <span>Net Pay</span>
+                    <b id="netPayCounter">₱0.00</b>
+                </div>
+            </div>
+            <div class="float-card scan-toast">
+                <i class="fas fa-circle-check fa-lg"></i>
+                <div>
+                    <b>Time In recorded</b>
+                    <span>8:02 AM · QR scan</span>
+                </div>
+            </div>
+            <div class="float-card qr-card">
+                <div class="qr-box"></div>
+                <p>Scan to clock in</p>
+                <small>No app install needed</small>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- ============ FEATURES ============ -->
+<section id="features">
+    <div class="wrap">
+        <div class="section-head">
+            <div class="kicker">What's inside</div>
+            <h2>Everything payday actually needs.</h2>
+            <p>One system covers attendance, computation, and payslips — replace it or plug it into whatever you're already using.</p>
+        </div>
+        <div class="feat-grid">
+
+            <div class="feat-card">
+                <!-- swap for real screenshot: dashboard overview -->
+                <div class="feat-visual">
+                    <div class="mock-dash">
+                        <div class="mock-stat"><b>128</b><span>Active Employees</span></div>
+                        <div class="mock-stat"><b>112</b><span>Present Today</span></div>
+                        <div class="mock-stat"><b>₱482K</b><span>This Period</span></div>
+                        <div class="mock-stat"><b>4</b><span>Pending Approvals</span></div>
+                    </div>
+                </div>
+                <div class="feat-body">
+                    <h3>Live dashboard</h3>
+                    <p>Headcount, today's attendance, and this period's payroll total at a glance — no exporting to check.</p>
+                </div>
+            </div>
+
+            <div class="feat-card">
+                <!-- swap for real screenshot: employee records -->
+                <div class="feat-visual">
+                    <div class="mock-emp">
+                        <div class="mock-emp-row"><div class="mock-avatar"></div><div class="bar"></div><span class="badge-mini">Active</span></div>
+                        <div class="mock-emp-row"><div class="mock-avatar"></div><div class="bar"></div><span class="badge-mini">Active</span></div>
+                        <div class="mock-emp-row"><div class="mock-avatar"></div><div class="bar"></div><span class="badge-mini">Active</span></div>
+                    </div>
+                </div>
+                <div class="feat-body">
+                    <h3>Employee records</h3>
+                    <p>Rates, schedules, and status in one place — daily or hourly rate, per employee, changeable anytime.</p>
+                </div>
+            </div>
+
+            <div class="feat-card">
+                <!-- swap for real screenshot: DTR / attendance grid -->
+                <div class="feat-visual">
+                    <div class="mock-dtr">
+                        <div class="mock-dtr-row">
+                            <div class="mock-dtr-cell on"></div><div class="mock-dtr-cell on"></div><div class="mock-dtr-cell on"></div>
+                            <div class="mock-dtr-cell on"></div><div class="mock-dtr-cell on"></div><div class="mock-dtr-cell"></div>
+                            <div class="mock-dtr-cell sun"></div>
+                        </div>
+                        <div class="mock-dtr-row">
+                            <div class="mock-dtr-cell on"></div><div class="mock-dtr-cell on"></div><div class="mock-dtr-cell"></div>
+                            <div class="mock-dtr-cell on"></div><div class="mock-dtr-cell on"></div><div class="mock-dtr-cell"></div>
+                            <div class="mock-dtr-cell sun"></div>
+                        </div>
+                        <div class="mock-dtr-label"><span>Mon–Sat</span><span>Sun = OT only</span></div>
+                    </div>
+                </div>
+                <div class="feat-body">
+                    <h3>Daily time record</h3>
+                    <p>Paste a whole cutoff at once, or log days one by one. Sundays can pay OT-only automatically — no base rate.</p>
+                </div>
+            </div>
+
+            <div class="feat-card">
+                <!-- swap for real screenshot: QR scanner kiosk -->
+                <div class="feat-visual">
+                    <div class="mock-qr">
+                        <div class="mock-qr-box"></div>
+                        <div class="mock-qr-pill"><i class="fas fa-check"></i> Time Out · 6:04 PM</div>
+                    </div>
+                </div>
+                <div class="feat-body">
+                    <h3>QR time clock</h3>
+                    <p>Each employee gets a personal QR code. Scan in, scan out — attendance logs itself, typo-free.</p>
+                </div>
+            </div>
+
+            <div class="feat-card">
+                <!-- swap for real screenshot: payroll computation -->
+                <div class="feat-visual">
+                    <div class="mock-pay">
+                        <div class="mock-pay-row"><span>Basic Pay</span><b>₱5,000.00</b></div>
+                        <div class="mock-pay-row"><span>Overtime Pay</span><b>₱875.00</b></div>
+                        <div class="mock-pay-row"><span>Late Deduction</span><b>-₱40.00</b></div>
+                        <div class="mock-pay-row"><span>Statutory Deductions</span><b>-₱312.50</b></div>
+                        <div class="mock-pay-total"><span>Net Pay</span><span>₱5,522.50</span></div>
+                    </div>
+                </div>
+                <div class="feat-body">
+                    <h3>Automated payroll</h3>
+                    <p>OT, lateness, and SSS/PhilHealth/Pag-IBIG all computed the moment attendance is in — nothing to re-key.</p>
+                </div>
+            </div>
+
+            <div class="feat-card">
+                <!-- swap for real screenshot: payslip / reports export -->
+                <div class="feat-visual">
+                    <div class="mock-slip">
+                        <div class="line w80"></div>
+                        <div class="line w60"></div>
+                        <div class="line"></div>
+                        <div class="line w80"></div>
+                        <div class="dl"><i class="fas fa-arrow-down"></i></div>
+                    </div>
+                </div>
+                <div class="feat-body">
+                    <h3>Payslips & reports</h3>
+                    <p>Generate per-employee payslips and period reports, ready to print or send, in a couple of clicks.</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</section>
+
+<!-- ============ HOW IT WORKS ============ -->
+<section id="how-it-works" class="how-wrap">
+    <div class="wrap">
+        <div class="section-head">
+            <div class="kicker">How it works</div>
+            <h2>From time-in to payslip in four steps.</h2>
+            <p>Set it up once per employee; every cutoff after that runs itself.</p>
+        </div>
+        <div class="how-steps">
+            <div class="how-step">
+                <div class="how-num">1</div>
+                <h3>Add your team</h3>
+                <p>Set each employee's rate and schedule once — daily, hourly, whatever fits.</p>
+            </div>
+            <div class="how-step">
+                <div class="how-num">2</div>
+                <h3>Track attendance</h3>
+                <p>QR scan, kiosk, or manual DTR entry — pick whatever suits each shift.</p>
+            </div>
+            <div class="how-step">
+                <div class="how-num">3</div>
+                <h3>Payroll computes itself</h3>
+                <p>OT, late deductions, Sunday rules, and statutory contributions — all automatic.</p>
+            </div>
+            <div class="how-step">
+                <div class="how-num">4</div>
+                <h3>Send payslips</h3>
+                <p>Generate the period's payslips and hand them out. Done before lunch.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ============ PRICING ============ -->
+<section id="pricing" class="pricing-wrap">
+    <div class="wrap">
+        <div class="section-head on-dark">
+            <div class="kicker">Pricing</div>
+            <h2>Try it free, then pick a plan that fits your cutoff.</h2>
+            <p>Same full feature set on every plan — you're only choosing how long you're locking in the rate.</p>
+        </div>
+        <div class="price-grid">
+
+            <div class="price-card">
+                <div class="price-name">5-Day Trial</div>
+                <div class="price-amount"><b>₱0</b></div>
+                <div class="price-sub">Full access, no card required</div>
+                <ul class="price-feats">
+                    <li><i class="fas fa-check"></i> Unlimited employees</li>
+                    <li><i class="fas fa-check"></i> QR & manual attendance</li>
+                    <li><i class="fas fa-check"></i> Automated payroll & payslips</li>
+                    <li><i class="fas fa-check"></i> PH statutory deductions</li>
+                </ul>
+                <a href="index.html?plan=trial" class="btn btn-ghost btn-block">Start Free Trial</a>
+            </div>
+
+            <div class="price-card">
+                <div class="price-name">3-Month Plan</div>
+                <div class="price-amount"><b>₱399</b><span>/ 3 months</span></div>
+                <div class="price-sub">≈ ₱133 per month</div>
+                <ul class="price-feats">
+                    <li><i class="fas fa-check"></i> Unlimited employees</li>
+                    <li><i class="fas fa-check"></i> QR & manual attendance</li>
+                    <li><i class="fas fa-check"></i> Automated payroll & payslips</li>
+                    <li><i class="fas fa-check"></i> PH statutory deductions</li>
+                    <li><i class="fas fa-check"></i> Email support</li>
+                </ul>
+                <a href="index.html?plan=3mo" class="btn btn-outline-dark btn-block" style="color:#fff; border-color:rgba(255,255,255,.25);">Choose 3 Months</a>
+            </div>
+
+            <div class="price-card featured">
+                <div class="price-tag">Best value</div>
+                <div class="price-name">6-Month Plan</div>
+                <div class="price-amount"><b>₱599</b><span>/ 6 months</span></div>
+                <div class="price-sub">≈ ₱99.83 per month</div>
+                <ul class="price-feats">
+                    <li><i class="fas fa-check"></i> Unlimited employees</li>
+                    <li><i class="fas fa-check"></i> QR & manual attendance</li>
+                    <li><i class="fas fa-check"></i> Automated payroll & payslips</li>
+                    <li><i class="fas fa-check"></i> PH statutory deductions</li>
+                    <li><i class="fas fa-check"></i> Priority email support</li>
+                </ul>
+                <a href="index.html?plan=6mo" class="btn btn-lime btn-block">Choose 6 Months</a>
+            </div>
+
+        </div>
+    </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section id="faq">
+    <div class="wrap">
+        <div class="section-head">
+            <div class="kicker">FAQ</div>
+            <h2>Questions worth answering upfront.</h2>
+        </div>
+        <div class="faq-list">
+
+            <div class="faq-item">
+                <button class="faq-q">What happens when my trial ends?<i class="fas fa-plus"></i></button>
+                <div class="faq-a"><p>Nothing is deleted. Your employees and attendance history stay put — subscribe to a 3- or 6-month plan whenever you're ready to keep going.</p></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q">Does it compute SSS, PhilHealth, and Pag-IBIG automatically?<i class="fas fa-plus"></i></button>
+                <div class="faq-a"><p>Yes — built-in PH statutory contribution tables handle the employee share automatically each period, with room to override per employee if you need to.</p></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q">How does Sunday overtime work?<i class="fas fa-plus"></i></button>
+                <div class="faq-a"><p>Turn on the Sunday rule in Settings and every hour worked on a Sunday pays at OT rate only — no base day pay — matching how a lot of Philippine businesses already handle Sunday premium.</p></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q">Can employees clock in without installing an app?<i class="fas fa-plus"></i></button>
+                <div class="faq-a"><p>Yes. Each employee gets a personal QR code that a shared kiosk or scanner can read, and admins can always log a day manually if someone forgets to scan.</p></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q">Can I export or print payslips?<i class="fas fa-plus"></i></button>
+                <div class="faq-a"><p>Every payslip can be generated and printed per employee, per pay period, whenever you run payroll.</p></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q">Is my payroll data secure?<i class="fas fa-plus"></i></button>
+                <div class="faq-a"><p>Data is stored on encrypted, access-controlled infrastructure, with admin login required to view or edit anything.</p></div>
+            </div>
+
+        </div>
+    </div>
+</section>
+
+<!-- ============ FINAL CTA ============ -->
+<section>
+    <div class="wrap">
+        <div class="cta-band">
+            <h2>Run your next cutoff without the spreadsheet.</h2>
+            <p>Five days, full access, nothing to install for your team beyond a QR code.</p>
+            <div class="hero-ctas">
+                <a href="index.html?plan=trial" class="btn btn-lime btn-lg">Start Free Trial</a>
+                <a href="index.html" class="btn btn-ghost btn-lg" style="border-color:rgba(255,255,255,.3);">Login</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+    <div class="wrap">
+        <div class="foot-grid">
+            <div class="foot-brand">
+                <div class="brand" style="color:var(--on-dark);">
+                    <span class="brand-mark">ZE</span> ZE Payroll
+                </div>
+                <p>Attendance, computation, and payslips — one system, one payday routine.</p>
+            </div>
+            <div class="foot-col">
+                <h4>Product</h4>
+                <ul>
+                    <li><a href="#features">Features</a></li>
+                    <li><a href="#how-it-works">How It Works</a></li>
+                    <li><a href="#pricing">Pricing</a></li>
+                </ul>
+            </div>
+            <div class="foot-col">
+                <h4>Account</h4>
+                <ul>
+                    <li><a href="index.html">Login</a></li>
+                    <li><a href="index.html?plan=trial">Start Free Trial</a></li>
+                </ul>
+            </div>
+            <div class="foot-col">
+                <h4>Support</h4>
+                <ul>
+                    <li><a href="#faq">FAQ</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="foot-bottom">
+            <span>&copy; <span id="year"></span> ZE Payroll. All rights reserved.</span>
+        </div>
+    </div>
+</footer>
+
+<script>
+    // Sticky navbar appearance change
+    const nav = document.getElementById('siteNav');
+    const onScroll = () => {
+        if (window.scrollY > 24) nav.classList.add('scrolled');
+        else nav.classList.remove('scrolled');
+    };
+    document.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+
+    // Mobile nav toggle
+    const navToggle = document.getElementById('navToggle');
+    const navLinks = document.getElementById('navLinks');
+    navToggle.addEventListener('click', () => {
+        const isOpen = navLinks.classList.toggle('open');
+        navToggle.setAttribute('aria-expanded', String(isOpen));
+        navToggle.innerHTML = isOpen ? '<i class="fas fa-xmark"></i>' : '<i class="fas fa-bars"></i>';
+    });
+    navLinks.querySelectorAll('a').forEach(a => a.addEventListener('click', () => {
+        navLinks.classList.remove('open');
+        navToggle.setAttribute('aria-expanded', 'false');
+        navToggle.innerHTML = '<i class="fas fa-bars"></i>';
+    }));
+
+    // FAQ accordion
+    document.querySelectorAll('.faq-item').forEach(item => {
+        const q = item.querySelector('.faq-q');
+        const a = item.querySelector('.faq-a');
+        q.addEventListener('click', () => {
+            const isOpen = item.classList.contains('open');
+            document.querySelectorAll('.faq-item.open').forEach(open => {
+                if (open !== item) {
+                    open.classList.remove('open');
+                    open.querySelector('.faq-a').style.maxHeight = null;
+                }
+            });
+            item.classList.toggle('open', !isOpen);
+            a.style.maxHeight = !isOpen ? a.scrollHeight + 'px' : null;
+        });
+    });
+
+    // One orchestrated hero animation: net pay counts up on load
+    const counterEl = document.getElementById('netPayCounter');
+    const target = 5522.50;
+    let started = false;
+    const runCounter = () => {
+        if (started) return;
+        started = true;
+        const duration = 1400;
+        const startTime = performance.now();
+        const step = (now) => {
+            const progress = Math.min(1, (now - startTime) / duration);
+            const eased = 1 - Math.pow(1 - progress, 3);
+            const value = target * eased;
+            counterEl.textContent = '₱' + value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            if (progress < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+    };
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        counterEl.textContent = '₱' + target.toLocaleString('en-PH', { minimumFractionDigits: 2 });
+    } else {
+        setTimeout(runCounter, 500);
+    }
+
+    // Remember which plan someone picked so index.html can read it later
+    document.querySelectorAll('a[href*="plan="]').forEach(a => {
+        a.addEventListener('click', () => {
+            const plan = new URL(a.href, window.location.href).searchParams.get('plan');
+            try { localStorage.setItem('ze_selected_plan', plan); } catch (e) {}
+        });
+    });
+
+    document.getElementById('year').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>
