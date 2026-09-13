@@ -223,54 +223,26 @@
         border:1px solid rgba(15,20,48,.05);
     }
     .feat-visual{
-        height:168px; padding:16px; background:var(--paper-dim);
+        height:196px; padding:16px; background:var(--paper-dim);
         display:flex; align-items:center; justify-content:center;
         border-bottom:1px solid rgba(15,20,48,.06);
+        overflow:hidden;
+    }
+    .feat-visual img{
+        max-width:100%; max-height:100%; width:auto; height:auto;
+        object-fit:contain; border-radius:8px;
+        box-shadow:0 10px 26px -12px rgba(15,20,48,.4);
     }
     .feat-body{padding:22px 22px 26px;}
     .feat-body h3{font-size:17px; margin-bottom:8px;}
     .feat-body p{font-size:14px; color:var(--on-light-dim);}
 
-    /* mini-mockup: dashboard */
-    .mock-dash{width:100%; display:grid; grid-template-columns:1fr 1fr; gap:8px;}
-    .mock-stat{background:#fff; border-radius:8px; padding:8px 10px; box-shadow:0 4px 10px -6px rgba(15,20,48,.2);}
-    .mock-stat b{display:block; font-family:var(--display); font-size:15px; color:var(--blue-deep);}
-    .mock-stat span{font-size:9.5px; color:var(--on-light-dim);}
-
-    /* mini-mockup: employees table */
-    .mock-emp{width:100%; background:#fff; border-radius:8px; padding:9px; box-shadow:0 4px 10px -6px rgba(15,20,48,.2);}
-    .mock-emp-row{display:flex; align-items:center; gap:8px; padding:5px 0;}
-    .mock-avatar{width:20px; height:20px; border-radius:50%; background:var(--blue); flex-shrink:0;}
-    .mock-emp-row .bar{height:6px; border-radius:4px; background:var(--paper-dim); flex:1;}
-    .mock-emp-row .badge-mini{font-size:8px; font-weight:700; padding:2px 6px; border-radius:999px; background:#e8f7ee; color:#0f9d58;}
-
-    /* mini-mockup: DTR grid with sunday OT */
-    .mock-dtr{width:100%; background:#fff; border-radius:8px; padding:9px; box-shadow:0 4px 10px -6px rgba(15,20,48,.2);}
-    .mock-dtr-row{display:grid; grid-template-columns:repeat(7, 1fr); gap:3px; margin-bottom:4px;}
-    .mock-dtr-cell{aspect-ratio:1; border-radius:4px; background:var(--paper-dim);}
-    .mock-dtr-cell.on{background:var(--blue-bright); opacity:.85;}
-    .mock-dtr-cell.sun{background:var(--lime);}
-    .mock-dtr-label{font-size:8.5px; color:var(--on-light-dim); display:flex; justify-content:space-between; margin-top:4px;}
-
-    /* mini-mockup: QR scan */
+    /* mini-mockup: QR scan (no real screenshot yet for the kiosk flow) */
     .mock-qr{display:flex; flex-direction:column; align-items:center; gap:8px;}
     .mock-qr-box{width:78px; height:78px; border-radius:8px; background:#fff; box-shadow:0 4px 10px -6px rgba(15,20,48,.25);
         background-image:repeating-linear-gradient(90deg,#0f1430 0 5px, transparent 5px 10px), repeating-linear-gradient(0deg,#0f1430 0 5px, transparent 5px 10px);
         background-blend-mode:multiply; background-color:#fff;}
     .mock-qr-pill{font-size:10px; font-weight:700; background:#fff; padding:5px 10px; border-radius:999px; box-shadow:0 4px 10px -6px rgba(15,20,48,.25); color:#0f9d58;}
-
-    /* mini-mockup: payroll computation */
-    .mock-pay{width:100%; background:#fff; border-radius:8px; padding:10px; box-shadow:0 4px 10px -6px rgba(15,20,48,.2);}
-    .mock-pay-row{display:flex; justify-content:space-between; font-size:9.5px; padding:3.5px 0; color:var(--on-light-dim); border-bottom:1px dashed rgba(15,20,48,.08);}
-    .mock-pay-row b{color:var(--on-light); font-weight:700;}
-    .mock-pay-total{display:flex; justify-content:space-between; font-size:11px; font-weight:800; padding-top:6px; color:var(--blue-deep);}
-
-    /* mini-mockup: payslip/report */
-    .mock-slip{width:100%; background:#fff; border-radius:8px; padding:10px; box-shadow:0 4px 10px -6px rgba(15,20,48,.2); position:relative;}
-    .mock-slip .line{height:5px; border-radius:3px; background:var(--paper-dim); margin-bottom:6px;}
-    .mock-slip .line.w60{width:60%;}
-    .mock-slip .line.w80{width:80%;}
-    .mock-slip .dl{position:absolute; right:10px; bottom:10px; width:26px; height:26px; border-radius:50%; background:var(--blue); display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px;}
 
     /* ============ HOW IT WORKS ============ */
     .how-wrap{
@@ -473,14 +445,8 @@
         <div class="feat-grid">
 
             <div class="feat-card">
-                <!-- swap for real screenshot: dashboard overview -->
                 <div class="feat-visual">
-                    <div class="mock-dash">
-                        <div class="mock-stat"><b>128</b><span>Active Employees</span></div>
-                        <div class="mock-stat"><b>112</b><span>Present Today</span></div>
-                        <div class="mock-stat"><b>₱482K</b><span>This Period</span></div>
-                        <div class="mock-stat"><b>4</b><span>Pending Approvals</span></div>
-                    </div>
+                    <img src="screenshots/dashboard.png" alt="ZE Payroll dashboard showing total employees, present today, late today, total payroll, recent DTR entries, and a weekly attendance chart" loading="lazy">
                 </div>
                 <div class="feat-body">
                     <h3>Live dashboard</h3>
@@ -489,13 +455,8 @@
             </div>
 
             <div class="feat-card">
-                <!-- swap for real screenshot: employee records -->
                 <div class="feat-visual">
-                    <div class="mock-emp">
-                        <div class="mock-emp-row"><div class="mock-avatar"></div><div class="bar"></div><span class="badge-mini">Active</span></div>
-                        <div class="mock-emp-row"><div class="mock-avatar"></div><div class="bar"></div><span class="badge-mini">Active</span></div>
-                        <div class="mock-emp-row"><div class="mock-avatar"></div><div class="bar"></div><span class="badge-mini">Active</span></div>
-                    </div>
+                    <img src="screenshots/employees.png" alt="ZE Payroll employee list showing ID, photo, name, position, daily rate, hourly rate, and status" loading="lazy">
                 </div>
                 <div class="feat-body">
                     <h3>Employee records</h3>
@@ -504,21 +465,8 @@
             </div>
 
             <div class="feat-card">
-                <!-- swap for real screenshot: DTR / attendance grid -->
                 <div class="feat-visual">
-                    <div class="mock-dtr">
-                        <div class="mock-dtr-row">
-                            <div class="mock-dtr-cell on"></div><div class="mock-dtr-cell on"></div><div class="mock-dtr-cell on"></div>
-                            <div class="mock-dtr-cell on"></div><div class="mock-dtr-cell on"></div><div class="mock-dtr-cell"></div>
-                            <div class="mock-dtr-cell sun"></div>
-                        </div>
-                        <div class="mock-dtr-row">
-                            <div class="mock-dtr-cell on"></div><div class="mock-dtr-cell on"></div><div class="mock-dtr-cell"></div>
-                            <div class="mock-dtr-cell on"></div><div class="mock-dtr-cell on"></div><div class="mock-dtr-cell"></div>
-                            <div class="mock-dtr-cell sun"></div>
-                        </div>
-                        <div class="mock-dtr-label"><span>Mon–Sat</span><span>Sun = OT only</span></div>
-                    </div>
+                    <img src="screenshots/dtr.png" alt="ZE Payroll Daily Time Record table showing time in, time out, total hours, OT hours, late minutes, and status per employee" loading="lazy">
                 </div>
                 <div class="feat-body">
                     <h3>Daily time record</h3>
@@ -541,15 +489,8 @@
             </div>
 
             <div class="feat-card">
-                <!-- swap for real screenshot: payroll computation -->
                 <div class="feat-visual">
-                    <div class="mock-pay">
-                        <div class="mock-pay-row"><span>Basic Pay</span><b>₱5,000.00</b></div>
-                        <div class="mock-pay-row"><span>Overtime Pay</span><b>₱875.00</b></div>
-                        <div class="mock-pay-row"><span>Late Deduction</span><b>-₱40.00</b></div>
-                        <div class="mock-pay-row"><span>Statutory Deductions</span><b>-₱312.50</b></div>
-                        <div class="mock-pay-total"><span>Net Pay</span><span>₱5,522.50</span></div>
-                    </div>
+                    <img src="screenshots/payroll.png" alt="ZE Payroll payroll processing table showing days worked, total hours, regular pay, OT pay, late deduction, deductions, and net pay per employee" loading="lazy">
                 </div>
                 <div class="feat-body">
                     <h3>Automated payroll</h3>
@@ -558,21 +499,15 @@
             </div>
 
             <div class="feat-card">
-                <!-- swap for real screenshot: payslip / reports export -->
                 <div class="feat-visual">
-                    <div class="mock-slip">
-                        <div class="line w80"></div>
-                        <div class="line w60"></div>
-                        <div class="line"></div>
-                        <div class="line w80"></div>
-                        <div class="dl"><i class="fas fa-arrow-down"></i></div>
-                    </div>
+                    <img src="screenshots/geofencing.png" alt="ZE Payroll Attendance Security settings showing geofencing enforcement, office coordinates, and allowed radius" loading="lazy">
                 </div>
                 <div class="feat-body">
-                    <h3>Payslips & reports</h3>
-                    <p>Generate per-employee payslips and period reports, ready to print or send, in a couple of clicks.</p>
+                    <h3>Geofenced attendance</h3>
+                    <p>Lock QR clock-ins to the office itself — set your coordinates and radius, and it's enforced server-side, not just in the browser.</p>
                 </div>
             </div>
+
 
         </div>
     </div>
@@ -691,6 +626,10 @@
             <div class="faq-item">
                 <button class="faq-q">Can employees clock in without installing an app?<i class="fas fa-plus"></i></button>
                 <div class="faq-a"><p>Yes. Each employee gets a personal QR code that a shared kiosk or scanner can read, and admins can always log a day manually if someone forgets to scan.</p></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q">Can I stop employees from clocking in outside the office?<i class="fas fa-plus"></i></button>
+                <div class="faq-a"><p>Yes — turn on Attendance Security in Settings, set your office coordinates and an allowed radius, and QR clock-ins outside that radius are rejected on the server, not just hidden in the browser.</p></div>
             </div>
             <div class="faq-item">
                 <button class="faq-q">Can I export or print payslips?<i class="fas fa-plus"></i></button>
