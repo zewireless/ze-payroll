@@ -1558,8 +1558,10 @@ async function saveDTR() {
         totalHours = calculateWorkHours(timeIn, timeOut);
     }
 
-    // Auto-calculate OT hours (anything past PM Time Out) if not manually set
-    const calculatedOT = (timeIn && timeOut) ? calculateOTHours(timeIn, timeOut) : 0;
+    // Auto-calculate OT hours (anything past PM Time Out; entire shift if
+    // this is a Sunday and Settings has "Sunday = all hours OT" on) if
+    // not manually set
+    const calculatedOT = (timeIn && timeOut) ? calculateOTHours(timeIn, timeOut, date) : 0;
     const finalOtHours = otHours || calculatedOT;
 
     // Auto-calculate late minutes if not manually set
@@ -2238,8 +2240,14 @@ function calculateWorkHours(timeIn, timeOut) {
     return computeShiftMinutes(timeIn, timeOut).workedMinutes / 60;
 }
 
-function calculateOTHours(timeIn, timeOut) {
+function calculateOTHours(timeIn, timeOut, dateStr) {
     if (!timeIn || !timeOut) return 0;
+    if (dateStr && isSundayDate(dateStr) && settings.sundayAllOT) {
+        // Sunday-all-OT: every hour worked that day is OT (there is no
+        // base/day pay for Sundays), not just the overflow past PM Time
+        // Out that a normal weekday would count as OT.
+        return calculateWorkHours(timeIn, timeOut);
+    }
     return computeShiftMinutes(timeIn, timeOut).otMinutes / 60;
 }
 
@@ -2596,8 +2604,18 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
     // day pay would overpay for the hours actually worked. Late
     // deduction and OT still apply to these exactly as normal below;
     // only the base "days worked" pay is computed differently for them.
-    const overrideDtrs = dtrs.filter(d => d.hourlyOverride);
-    const standardDtrs = dtrs.filter(d => !d.hourlyOverride);
+    //
+    // Sundays under the "Sunday = all hours OT" rule get no base/day pay
+    // at all - every hour worked that day is paid entirely through
+    // otPay below instead (otHours/otPay are summed across ALL dtrs, so
+    // this exclusion only affects the flat day-rate/hourly-override
+    // side). Derived from the entry's own date rather than a stored
+    // isSunday flag, since that flag is only set on entries that went
+    // through the Paste DTR grid's attendance engine - manual and
+    // kiosk/QR entries need the same rule applied just as reliably.
+    const isSundayNoBasePay = d => isSundayDate(d.date) && settings.sundayAllOT;
+    const overrideDtrs = dtrs.filter(d => d.hourlyOverride && !isSundayNoBasePay(d));
+    const standardDtrs = dtrs.filter(d => !d.hourlyOverride && !isSundayNoBasePay(d));
 
     // Full days worked. 'late' still counts as a full day worked - the
     // lateness itself is penalized separately below via lateDeduction.
@@ -2783,11 +2801,12 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
 
 function renderPayrollRow(tbody, emp, data) {
     // An employee with no standard days worked AND no hourly-override
-    // pay genuinely has nothing to pay for the period - skip the row.
-    // (Before hourly-override existed, daysWorked alone was enough to
-    // decide this; now an employee whose only entries are hourly-
-    // override days would have daysWorked === 0 but still be owed pay.)
-    if (data.daysWorked === 0 && !data.hourlyOverridePay) return;
+    // pay AND no OT pay genuinely has nothing to pay for the period -
+    // skip the row. (Before hourly-override existed, daysWorked alone
+    // was enough to decide this; now an employee whose only entries are
+    // hourly-override days, or Sunday-all-OT days with no base pay,
+    // would have daysWorked === 0 but still be owed pay.)
+    if (data.daysWorked === 0 && !data.hourlyOverridePay && !data.otPay) return;
 
     const enableStatutory = settings.enableStatutoryDeductions !== false;
 
@@ -3410,7 +3429,7 @@ async function processQRScan(employee) {
     if (existingDTR) {
         // Time out
         const totalHours = calculateWorkHours(existingDTR.timeIn, timeStr);
-        const otHours = calculateOTHours(existingDTR.timeIn, timeStr);
+        const otHours = calculateOTHours(existingDTR.timeIn, timeStr, dateStr);
         const lateMinutes = existingDTR.lateMinutes || calculateLateMinutes(existingDTR.timeIn);
         row = {
             employee_id: employee.id,
