@@ -244,6 +244,114 @@
         background-blend-mode:multiply; background-color:#fff;}
     .mock-qr-pill{font-size:10px; font-weight:700; background:#fff; padding:5px 10px; border-radius:999px; box-shadow:0 4px 10px -6px rgba(15,20,48,.25); color:#0f9d58;}
 
+    /* ============ EXPLORE / COMMAND CENTER DEMO ============ */
+    .explore-wrap{
+        background:linear-gradient(180deg, var(--ink) 0%, var(--ink-soft) 100%); color:var(--on-dark);
+    }
+    .demo-shell{
+        display:flex; border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow);
+        border:1px solid rgba(255,255,255,.08); min-height:560px; background:#0b0f1c;
+    }
+    .demo-sidebar{
+        width:232px; flex-shrink:0; background:#080b15; padding:18px 12px;
+        border-right:1px solid rgba(255,255,255,.06);
+        display:flex; flex-direction:column;
+    }
+    .demo-brand{
+        display:flex; align-items:center; gap:10px; padding:6px 8px 18px; margin-bottom:8px;
+        border-bottom:1px solid rgba(255,255,255,.08); color:#fff; font-weight:700; font-family:var(--display);
+    }
+    .demo-nav-label{font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--on-dark-dim); padding:14px 10px 6px;}
+    .demo-nav-item{
+        display:flex; align-items:center; gap:11px; width:100%; text-align:left; padding:10px 10px;
+        border:none; background:none; border-radius:9px; color:var(--on-dark-dim); font-size:13.5px; font-weight:500;
+        cursor:pointer; transition:background .15s ease, color .15s ease;
+    }
+    .demo-nav-item i{width:16px; text-align:center; font-size:13px;}
+    .demo-nav-item:hover{background:rgba(255,255,255,.05); color:#fff;}
+    .demo-nav-item.active{background:rgba(37,99,235,.22); color:#fff; box-shadow:inset 3px 0 0 var(--blue-bright);}
+    .demo-sidebar-foot{margin-top:auto; padding-top:14px;}
+    .demo-panel-area{flex:1; padding:30px 32px; overflow:auto; background:#0b0f1c;}
+    .demo-panel{display:none; animation:demo-fade .35s ease;}
+    .demo-panel.active{display:block;}
+    @keyframes demo-fade{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
+    .demo-panel-title{font-family:var(--display); font-size:19px; color:#fff; margin-bottom:3px;}
+    .demo-panel-sub{font-size:13px; color:var(--on-dark-dim); margin-bottom:22px;}
+
+    .demo-stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:26px;}
+    .demo-stat-card{background:#131a30; border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:16px; display:flex; gap:12px; align-items:center;}
+    .demo-stat-icon{width:38px; height:38px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0;}
+    .demo-stat-card b{display:block; font-family:var(--display); font-size:19px; color:#fff; line-height:1.2;}
+    .demo-stat-card span{font-size:11.5px; color:var(--on-dark-dim);}
+
+    .demo-grid-2{display:grid; grid-template-columns:1.2fr 1fr; gap:16px;}
+    .demo-card{background:#131a30; border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:18px;}
+    .demo-card h4{font-size:13px; color:#fff; margin-bottom:14px; font-weight:600;}
+    .demo-list-row{display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px dashed rgba(255,255,255,.07); font-size:12.5px;}
+    .demo-list-row:last-child{border-bottom:none;}
+    .demo-list-name{color:#fff; font-weight:600;}
+    .demo-list-sub{color:var(--on-dark-dim); font-size:11.5px;}
+
+    .demo-pill{font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:999px;}
+    .demo-pill.ok{background:rgba(34,197,94,.16); color:#4ade80;}
+    .demo-pill.warn{background:rgba(234,179,8,.16); color:#fbbf24;}
+
+    .demo-bars{display:flex; align-items:flex-end; gap:8px; height:96px; margin-top:6px;}
+    .demo-bar{flex:1; background:linear-gradient(180deg,#4ade80,#22c55e); border-radius:4px 4px 0 0; position:relative;}
+    .demo-bar span{position:absolute; bottom:-18px; left:0; right:0; text-align:center; font-size:9.5px; color:var(--on-dark-dim);}
+
+    .demo-table{width:100%; border-collapse:collapse; font-size:12.5px;}
+    .demo-table th{text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--on-dark-dim); padding:0 10px 10px; font-weight:600;}
+    .demo-table td{padding:11px 10px; color:#fff; border-top:1px solid rgba(255,255,255,.06);}
+    .demo-table tr:hover td{background:rgba(255,255,255,.02);}
+    .demo-table td.dim{color:var(--on-dark-dim);}
+    .demo-table td.num{text-align:right; font-variant-numeric:tabular-nums;}
+    .demo-table th.num{text-align:right;}
+
+    .demo-qr-row{display:flex; gap:28px; align-items:center; flex-wrap:wrap;}
+    .demo-qr-box{
+        width:150px; height:150px; border-radius:10px; background:#fff; padding:14px; flex-shrink:0;
+        display:flex; align-items:center; justify-content:center;
+    }
+    .demo-qr-box .qr-mock{
+        width:100%; height:100%; border-radius:4px;
+        background:repeating-linear-gradient(90deg,#0f1430 0 7px, transparent 7px 14px), repeating-linear-gradient(0deg,#0f1430 0 7px, transparent 7px 14px);
+        background-blend-mode:multiply; background-color:#fff;
+    }
+    .demo-scan-feed{flex:1; min-width:220px;}
+    .demo-scan-item{display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px dashed rgba(255,255,255,.07); font-size:12.5px;}
+    .demo-scan-item:last-child{border-bottom:none;}
+    .demo-scan-item i{color:#4ade80;}
+
+    .demo-settings-row{display:flex; justify-content:space-between; align-items:center; padding:13px 0; border-bottom:1px solid rgba(255,255,255,.06); font-size:13px;}
+    .demo-settings-row:last-child{border-bottom:none;}
+    .demo-settings-row .label{color:#fff; font-weight:500;}
+    .demo-settings-row .desc{color:var(--on-dark-dim); font-size:11.5px; margin-top:2px;}
+    .demo-toggle{width:38px; height:21px; border-radius:999px; background:#22c55e; position:relative; flex-shrink:0;}
+    .demo-toggle::after{content:''; position:absolute; top:2px; right:2px; width:17px; height:17px; border-radius:50%; background:#fff;}
+    .demo-toggle.off{background:rgba(255,255,255,.14);}
+    .demo-toggle.off::after{right:auto; left:2px;}
+
+    .demo-report-summary{background:#131a30; border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:22px; max-width:460px;}
+    .demo-report-row{display:flex; justify-content:space-between; padding:9px 0; font-size:13px; border-bottom:1px dashed rgba(255,255,255,.08);}
+    .demo-report-row.total{border-bottom:none; border-top:1px solid rgba(255,255,255,.14); margin-top:4px; padding-top:14px; font-family:var(--display); font-size:16px; color:#fff;}
+    .demo-report-row .lbl{color:var(--on-dark-dim);}
+    .demo-report-row.total .lbl{color:#fff;}
+    .demo-report-row .neg{color:#f87171;}
+
+    .demo-cta{text-align:center; margin-top:26px;}
+    .demo-cta p{color:var(--on-dark-dim); font-size:13px; margin-bottom:14px;}
+
+    @media (max-width:860px){
+        .demo-shell{flex-direction:column;}
+        .demo-sidebar{width:100%; flex-direction:row; overflow-x:auto; gap:4px; padding:12px;}
+        .demo-brand, .demo-nav-label, .demo-sidebar-foot{display:none;}
+        .demo-nav-item{flex-shrink:0; white-space:nowrap;}
+        .demo-stat-grid{grid-template-columns:repeat(2,1fr);}
+        .demo-grid-2{grid-template-columns:1fr;}
+        .demo-panel-area{padding:22px 18px;}
+    }
+
     /* ============ HOW IT WORKS ============ */
     .how-wrap{
         background:linear-gradient(180deg, var(--paper) 0%, var(--paper-dim) 100%);
@@ -368,6 +476,7 @@
         </a>
         <ul class="nav-links" id="navLinks">
             <li><a href="#features">Features</a></li>
+            <li><a href="#explore">Live Demo</a></li>
             <li><a href="#how-it-works">How It Works</a></li>
             <li><a href="#pricing">Pricing</a></li>
             <li><a href="#faq">FAQ</a></li>
@@ -546,6 +655,185 @@
     </div>
 </section>
 
+<!-- ============ EXPLORE / COMMAND CENTER DEMO ============ -->
+<section id="explore" class="explore-wrap">
+    <div class="wrap">
+        <div class="section-head on-dark">
+            <div class="kicker">Take a look inside</div>
+            <h2>Click around. This is the actual app.</h2>
+            <p>No sign-up needed — tap any item in the sidebar to preview what your team and your payday will actually look like.</p>
+        </div>
+
+        <div class="demo-shell">
+            <!-- Sidebar -->
+            <nav class="demo-sidebar">
+                <div class="demo-brand"><span class="brand-mark">ZE</span> ZE-Payroll</div>
+                <div class="demo-nav-label">Overview</div>
+                <button class="demo-nav-item active" data-demo="dashboard"><i class="fas fa-th-large"></i> Dashboard</button>
+                <div class="demo-nav-label">Manage</div>
+                <button class="demo-nav-item" data-demo="employees"><i class="fas fa-users"></i> Employees</button>
+                <button class="demo-nav-item" data-demo="dtr"><i class="fas fa-clock"></i> DTR Entries</button>
+                <button class="demo-nav-item" data-demo="qr"><i class="fas fa-qrcode"></i> QR Scanner</button>
+                <div class="demo-nav-label">Payday</div>
+                <button class="demo-nav-item" data-demo="payroll"><i class="fas fa-money-bill-wave"></i> Payroll</button>
+                <button class="demo-nav-item" data-demo="reports"><i class="fas fa-chart-bar"></i> Reports</button>
+                <div class="demo-nav-label">System</div>
+                <button class="demo-nav-item" data-demo="settings"><i class="fas fa-cog"></i> Settings</button>
+                <div class="demo-sidebar-foot">
+                    <a href="app.html?plan=trial" class="btn btn-lime btn-block" style="font-size:13px; padding:10px 14px;">Try it free →</a>
+                </div>
+            </nav>
+
+            <!-- Preview panels -->
+            <div class="demo-panel-area">
+
+                <!-- DASHBOARD -->
+                <div class="demo-panel active" data-panel="dashboard">
+                    <div class="demo-panel-title">Dashboard</div>
+                    <div class="demo-panel-sub">Your whole payroll status, at a glance.</div>
+                    <div class="demo-stat-grid">
+                        <div class="demo-stat-card">
+                            <div class="demo-stat-icon" style="background:rgba(59,130,246,.15); color:#60a5fa;"><i class="fas fa-users"></i></div>
+                            <div><b>8</b><span>Total Employees</span></div>
+                        </div>
+                        <div class="demo-stat-card">
+                            <div class="demo-stat-icon" style="background:rgba(34,197,94,.15); color:#4ade80;"><i class="fas fa-check"></i></div>
+                            <div><b>7</b><span>Present Today</span></div>
+                        </div>
+                        <div class="demo-stat-card">
+                            <div class="demo-stat-icon" style="background:rgba(234,179,8,.15); color:#fbbf24;"><i class="fas fa-clock"></i></div>
+                            <div><b>1</b><span>Late Today</span></div>
+                        </div>
+                        <div class="demo-stat-card">
+                            <div class="demo-stat-icon" style="background:rgba(195,255,77,.15); color:#c3ff4d;"><i class="fas fa-money-bill-wave"></i></div>
+                            <div><b>₱86,240</b><span>Total Payroll (net)</span></div>
+                        </div>
+                    </div>
+                    <div class="demo-grid-2">
+                        <div class="demo-card">
+                            <h4>Recent DTR Entries</h4>
+                            <div class="demo-list-row"><span class="demo-list-name">Maria Santos</span><span class="demo-list-sub">8:00 – 17:06</span><span class="demo-pill ok">Present</span></div>
+                            <div class="demo-list-row"><span class="demo-list-name">Jerome Cruz</span><span class="demo-list-sub">8:14 – 17:00</span><span class="demo-pill warn">Late</span></div>
+                            <div class="demo-list-row"><span class="demo-list-name">Ana Reyes</span><span class="demo-list-sub">7:58 – 18:02</span><span class="demo-pill ok">Present</span></div>
+                            <div class="demo-list-row"><span class="demo-list-name">Paolo Ramos</span><span class="demo-list-sub">8:00 – 17:00</span><span class="demo-pill ok">Present</span></div>
+                        </div>
+                        <div class="demo-card">
+                            <h4>Attendance This Week</h4>
+                            <div class="demo-bars">
+                                <div class="demo-bar" style="height:70%;"><span>Mon</span></div>
+                                <div class="demo-bar" style="height:82%;"><span>Tue</span></div>
+                                <div class="demo-bar" style="height:60%;"><span>Wed</span></div>
+                                <div class="demo-bar" style="height:88%;"><span>Thu</span></div>
+                                <div class="demo-bar" style="height:76%;"><span>Fri</span></div>
+                                <div class="demo-bar" style="height:40%;"><span>Sat</span></div>
+                                <div class="demo-bar" style="height:12%;"><span>Sun</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- EMPLOYEES -->
+                <div class="demo-panel" data-panel="employees">
+                    <div class="demo-panel-title">Employees</div>
+                    <div class="demo-panel-sub">Rates, positions, and status — one place to keep it all current.</div>
+                    <table class="demo-table">
+                        <thead><tr><th>ID</th><th>Name</th><th>Position</th><th class="num">Rate</th><th>Status</th></tr></thead>
+                        <tbody>
+                            <tr><td class="dim">EMP-001</td><td>Maria Santos</td><td class="dim">Cashier</td><td class="num">₱500/day</td><td><span class="demo-pill ok">Active</span></td></tr>
+                            <tr><td class="dim">EMP-002</td><td>Jerome Cruz</td><td class="dim">Warehouse Staff</td><td class="num">₱75/hr</td><td><span class="demo-pill ok">Active</span></td></tr>
+                            <tr><td class="dim">EMP-003</td><td>Ana Reyes</td><td class="dim">Sales Associate</td><td class="num">₱520/day</td><td><span class="demo-pill ok">Active</span></td></tr>
+                            <tr><td class="dim">EMP-004</td><td>Paolo Ramos</td><td class="dim">Delivery Rider</td><td class="num">₱480/day</td><td><span class="demo-pill ok">Active</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- DTR -->
+                <div class="demo-panel" data-panel="dtr">
+                    <div class="demo-panel-title">Daily Time Record</div>
+                    <div class="demo-panel-sub">Every time-in, time-out, OT hour, and late minute — logged automatically.</div>
+                    <table class="demo-table">
+                        <thead><tr><th>Employee</th><th>Time In</th><th>Time Out</th><th class="num">Hours</th><th class="num">OT</th><th class="num">Late</th><th>Status</th></tr></thead>
+                        <tbody>
+                            <tr><td>Maria Santos</td><td class="dim">8:00 AM</td><td class="dim">5:06 PM</td><td class="num">9.10</td><td class="num">1.10</td><td class="num">0m</td><td><span class="demo-pill ok">Present</span></td></tr>
+                            <tr><td>Jerome Cruz</td><td class="dim">8:14 AM</td><td class="dim">5:00 PM</td><td class="num">8.77</td><td class="num">0.77</td><td class="num">14m</td><td><span class="demo-pill warn">Late</span></td></tr>
+                            <tr><td>Ana Reyes</td><td class="dim">7:58 AM</td><td class="dim">6:02 PM</td><td class="num">10.07</td><td class="num">2.07</td><td class="num">0m</td><td><span class="demo-pill ok">Present</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- QR SCANNER -->
+                <div class="demo-panel" data-panel="qr">
+                    <div class="demo-panel-title">QR Time Clock</div>
+                    <div class="demo-panel-sub">Every employee gets a personal QR code. Scan in, scan out — no typing, no buddy-punching.</div>
+                    <div class="demo-qr-row">
+                        <div class="demo-qr-box"><div class="qr-mock"></div></div>
+                        <div class="demo-scan-feed">
+                            <div class="demo-scan-item"><i class="fas fa-circle-check"></i> <div><span class="demo-list-name">Maria Santos</span> — Time In <span class="demo-list-sub">· 8:00 AM</span></div></div>
+                            <div class="demo-scan-item"><i class="fas fa-circle-check"></i> <div><span class="demo-list-name">Jerome Cruz</span> — Time In <span class="demo-list-sub">· 8:14 AM</span></div></div>
+                            <div class="demo-scan-item"><i class="fas fa-circle-check"></i> <div><span class="demo-list-name">Ana Reyes</span> — Time Out <span class="demo-list-sub">· 6:02 PM</span></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PAYROLL -->
+                <div class="demo-panel" data-panel="payroll">
+                    <div class="demo-panel-title">Payroll</div>
+                    <div class="demo-panel-sub">OT, lateness, and SSS / PhilHealth / Pag-IBIG — computed the moment attendance is in.</div>
+                    <table class="demo-table">
+                        <thead><tr><th>Employee</th><th class="num">Days</th><th class="num">Reg. Pay</th><th class="num">OT Pay</th><th class="num">Deductions</th><th class="num">Net Pay</th></tr></thead>
+                        <tbody>
+                            <tr><td>Maria Santos</td><td class="num dim">11</td><td class="num dim">₱5,500.00</td><td class="num dim">₱962.50</td><td class="num dim">-₱312.50</td><td class="num" style="color:#4ade80; font-weight:700;">₱6,150.00</td></tr>
+                            <tr><td>Jerome Cruz</td><td class="num dim">11</td><td class="num dim">₱6,600.00</td><td class="num dim">₱515.63</td><td class="num dim">-₱410.00</td><td class="num" style="color:#4ade80; font-weight:700;">₱6,705.63</td></tr>
+                            <tr><td>Ana Reyes</td><td class="num dim">11</td><td class="num dim">₱5,720.00</td><td class="num dim">₱1,081.20</td><td class="num dim">-₱325.00</td><td class="num" style="color:#4ade80; font-weight:700;">₱6,476.20</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- REPORTS -->
+                <div class="demo-panel" data-panel="reports">
+                    <div class="demo-panel-title">Payroll Summary Report</div>
+                    <div class="demo-panel-sub">One-click summary for the cutoff — ready to export or hand to your accountant.</div>
+                    <div class="demo-report-summary">
+                        <div class="demo-report-row"><span class="lbl">Total Gross Pay</span><span>₱91,480.00</span></div>
+                        <div class="demo-report-row"><span class="lbl">Total Deductions</span><span class="neg">-₱5,240.00</span></div>
+                        <div class="demo-report-row total"><span class="lbl">Total Net Pay</span><span>₱86,240.00</span></div>
+                    </div>
+                </div>
+
+                <!-- SETTINGS -->
+                <div class="demo-panel" data-panel="settings">
+                    <div class="demo-panel-title">Settings</div>
+                    <div class="demo-panel-sub">The rules behind every computation — set once, applied every cutoff.</div>
+                    <div class="demo-card" style="max-width:520px;">
+                        <div class="demo-settings-row">
+                            <div><div class="label">Overtime Rate</div><div class="desc">125% of hourly rate (PH standard)</div></div>
+                            <div class="demo-toggle"></div>
+                        </div>
+                        <div class="demo-settings-row">
+                            <div><div class="label">Geofenced Attendance</div><div class="desc">QR clock-ins locked to office coordinates</div></div>
+                            <div class="demo-toggle"></div>
+                        </div>
+                        <div class="demo-settings-row">
+                            <div><div class="label">Statutory Deductions</div><div class="desc">SSS, PhilHealth, Pag-IBIG auto-computed</div></div>
+                            <div class="demo-toggle"></div>
+                        </div>
+                        <div class="demo-settings-row">
+                            <div><div class="label">Sunday OT-Only Pay</div><div class="desc">Sunday hours pay OT rate with no base rate</div></div>
+                            <div class="demo-toggle off"></div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="demo-cta">
+            <p>This is sample data — your real dashboard fills in as your team clocks in.</p>
+            <a href="app.html?plan=trial" class="btn btn-primary btn-lg">Start Free Trial</a>
+        </div>
+    </div>
+</section>
+
 <!-- ============ PRICING ============ -->
 <section id="pricing" class="pricing-wrap">
     <div class="wrap">
@@ -719,6 +1007,15 @@
         navToggle.setAttribute('aria-expanded', 'false');
         navToggle.innerHTML = '<i class="fas fa-bars"></i>';
     }));
+
+    // Command-center demo: sidebar swaps the preview panel, no page reload
+    document.querySelectorAll('.demo-nav-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const target = btn.getAttribute('data-demo');
+            document.querySelectorAll('.demo-nav-item').forEach(b => b.classList.toggle('active', b === btn));
+            document.querySelectorAll('.demo-panel').forEach(p => p.classList.toggle('active', p.getAttribute('data-panel') === target));
+        });
+    });
 
     // FAQ accordion
     document.querySelectorAll('.faq-item').forEach(item => {
