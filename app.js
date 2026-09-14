@@ -36,7 +36,7 @@ async function checkAuth() {
     if (session) {
         document.getElementById('loginModal').classList.add('hidden');
         if (savedUser) document.getElementById('loginUsername').value = savedUser;
-        initializeApp();
+        await checkBillingThenEnter();
     } else {
         document.getElementById('loginModal').classList.remove('hidden');
     }
@@ -48,6 +48,60 @@ async function checkAuth() {
             document.getElementById('loginModal').classList.remove('hidden');
         }
     });
+}
+
+// Gate the dashboard behind the client's subscription (see
+// supabase/migrations/009_saas_billing.sql). Fails OPEN (lets the admin
+// in) if that migration hasn't been run yet or the RPC call itself
+// errors out - a billing check that can't reach the server should
+// never be what locks a paying admin out of their own payroll.
+async function checkBillingThenEnter() {
+    document.getElementById('billingBlockedModal').classList.add('hidden');
+
+    const { data, error } = await supabaseClient.rpc('get_my_billing');
+    if (error || !data || Object.keys(data).length === 0) {
+        // 009_saas_billing.sql not run yet, or this account predates it -
+        // behave exactly like before (no billing gate at all).
+        initializeApp();
+        return;
+    }
+
+    const periodEnd = data.period_end ? new Date(data.period_end) : null;
+    const expired = periodEnd ? periodEnd.getTime() < Date.now() : false;
+    const blocked = data.status === 'cancelled' || data.status === 'overdue' || expired;
+
+    if (!blocked) {
+        initializeApp();
+        return;
+    }
+
+    renderBillingBlocked(data, expired);
+}
+
+function renderBillingBlocked(data, expired) {
+    const title = document.getElementById('billingBlockedTitle');
+    const sub = document.getElementById('billingBlockedSub');
+    const body = document.getElementById('billingBlockedBody');
+
+    if (data.status === 'cancelled') {
+        title.textContent = 'Your subscription is cancelled';
+        sub.textContent = 'Choose a plan to reactivate your account.';
+    } else if (expired && data.status === 'trial') {
+        title.textContent = 'Your free trial has ended';
+        sub.textContent = `Pick a plan to keep using ${data.business_name || 'ZE Payroll'}.`;
+    } else {
+        title.textContent = 'Payment pending';
+        sub.textContent = 'Your plan will activate as soon as we confirm your payment.';
+    }
+
+    body.innerHTML = `
+        <p><b>Plan:</b> ${data.plan_name || '—'}${data.price ? ` (₱${Number(data.price).toLocaleString()})` : ''}</p>
+        ${data.period_end ? `<p><b>Period end:</b> ${new Date(data.period_end).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })}</p>` : ''}
+        <p style="margin-top:10px; color:var(--gray-500);">Already paid? Send your proof of payment to
+        <b>ev.lounel4195@gmail.com</b> and we'll activate your plan within one business day.</p>
+    `;
+
+    document.getElementById('billingBlockedModal').classList.remove('hidden');
 }
 
 async function handleLogin() {
@@ -77,12 +131,13 @@ async function handleLogin() {
         localStorage.removeItem('payroll_username');
     }
     document.getElementById('loginModal').classList.add('hidden');
-    initializeApp();
+    await checkBillingThenEnter();
 }
 
 async function logout() {
     if (supabaseClient) await supabaseClient.auth.signOut();
     teardownRealtimeSync();
+    document.getElementById('billingBlockedModal').classList.add('hidden');
     document.getElementById('loginModal').classList.remove('hidden');
 }
 
@@ -3337,6 +3392,11 @@ async function setupCamera() {
 
     try {
         const stream = await navigator.mediaDevices.getUserMedia({
+            // 720p instead of 480p: more pixels landing on each QR module
+            // makes a real difference for jsQR once codes have any real
+            // density to them, and every phone/webcam capable of running
+            // this dashboard supports 1280x720. Still just a hint - the
+            // browser falls back gracefully on older hardware.
             video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
         });
         videoStream = stream;
@@ -3433,6 +3493,14 @@ async function startQRDecoding(video) {
 
             // Use jsQR library for real QR decoding
             if (typeof jsQR !== 'undefined') {
+                // 'dontInvert' only looks for dark modules on a light
+                // background. That misses codes held up under glare, at an
+                // angle to a light source, or viewed on some phone/laminated
+                // surfaces where contrast can look inverted to the camera.
+                // 'attemptBoth' checks both polarities each frame - slightly
+                // more work per scan, but we're already well under budget at
+                // 300ms/scan, and this is the single biggest lever for
+                // real-world scan reliability.
                 const code = jsQR(imageData.data, imageData.width, imageData.height, {
                     inversionAttempts: 'attemptBoth',
                 });
@@ -3568,6 +3636,13 @@ function scanAnother() {
 function getKioskScanUrl(employeeId) {
     const url = new URL(`scan.html?emp=${encodeURIComponent(employeeId)}`, window.location.href).toString();
 
+    // If this app is opened as a local file (file:///Users/.../ze-payroll/app.html)
+    // instead of being served from a real host, the URL above inherits that
+    // long, machine-specific path. That makes every QR code encode far more
+    // characters than it needs to, which forces a denser module grid and
+    // noticeably smaller, harder-to-scan squares at any given print size.
+    // It also won't open correctly on an employee's own phone, since their
+    // phone doesn't have that file on disk. Flag it once per session.
     if (window.location.protocol === 'file:' && !window.__qrFileProtocolWarned) {
         window.__qrFileProtocolWarned = true;
         console.warn(
@@ -3621,13 +3696,23 @@ function viewQREmployee(id) {
     showModal('qrModal');
 }
 
+// Rendered size of the QR itself (not counting quiet zone). 220px gives a much
+// denser pixel grid than the old 150px, so modules stay crisp instead of
+// getting blurry when the canvas is scaled up for printing.
 const QR_RENDER_SIZE = 220;
+// Minimum white quiet zone around the QR modules. Scanners (including jsQR)
+// rely on a clear blank border to find the code's edges - without one, a QR
+// sitting directly on a card border, a colored background, or a dark-mode
+// panel becomes noticeably harder to lock onto.
 const QR_QUIET_ZONE = 20;
 
 function generateRealQRCode(data, elementId) {
     const element = document.getElementById(elementId);
     if (!element) return;
 
+    // Force a plain white, padded box regardless of the app's theme (the
+    // dashboard supports dark mode, and a QR floating on a dark panel with no
+    // margin is much more likely to fail a scan).
     element.style.cssText = `
         display: inline-block;
         background: #ffffff;
@@ -3636,6 +3721,7 @@ function generateRealQRCode(data, elementId) {
         line-height: 0;
     `;
 
+    // Use QRCode library if available
     if (typeof QRCode !== 'undefined') {
         new QRCode(element, {
             text: data,
@@ -3643,9 +3729,14 @@ function generateRealQRCode(data, elementId) {
             height: QR_RENDER_SIZE,
             colorDark: '#000000',
             colorLight: '#ffffff',
+            // "Q" (~25% error correction) instead of "M" (~15%) - gives the
+            // camera meaningfully more room for glare, print smudging, or a
+            // slightly off angle without pushing the QR to a noticeably
+            // denser module grid.
             correctLevel: QRCode.CorrectLevel.Q
         });
     } else {
+        // Fallback - simple visual
         element.innerHTML = `
             <div style="width:${QR_RENDER_SIZE}px;height:${QR_RENDER_SIZE}px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border:1px solid #ddd;border-radius:8px;">
                 <span style="font-size:12px;color:#666;">QR: ${data}</span>

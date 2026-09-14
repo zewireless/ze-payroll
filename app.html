@@ -1136,7 +1136,33 @@
             </div>
             <div style="padding: 16px 20px; border-top: 1px solid var(--gray-200); text-align: center; font-size: 12px; color: var(--gray-500);">
                 Sign in with the admin account you created in Supabase Auth.<br>
+                New here? <a href="register.html" style="color: var(--primary); font-weight: 500;">Create an account →</a><br>
                 <a href="index.html" style="color: var(--primary); font-weight: 500;">&larr; Back to ZE Payroll home</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Billing Blocked Modal (shown instead of the dashboard when a trial/subscription has lapsed) -->
+    <div class="modal hidden" id="billingBlockedModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header text-center">
+                <div style="width: 60px; height: 60px; background: #f59e0b; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                    <i class="fas fa-clock" style="font-size: 24px; color: white;"></i>
+                </div>
+                <h3 id="billingBlockedTitle" style="margin-bottom: 4px;">Your trial has ended</h3>
+                <p class="text-muted" style="font-size: 13px;" id="billingBlockedSub">Pick a plan to keep using ZE Payroll.</p>
+            </div>
+            <div class="modal-body" style="font-size: 13.5px; line-height: 1.7;">
+                <div id="billingBlockedBody"></div>
+            </div>
+            <div class="modal-footer" style="flex-direction: column; gap: 8px;">
+                <a href="index.html#pricing" class="btn btn-primary" style="width: 100%; justify-content: center;">
+                    <i class="fas fa-arrow-up"></i> View Plans
+                </a>
+                <button class="btn btn-outline" style="width: 100%; justify-content: center;" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i> Sign Out
+                </button>
             </div>
         </div>
     </div>
