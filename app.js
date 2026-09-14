@@ -3336,7 +3336,7 @@ async function setupCamera() {
 
     try {
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+            video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
         });
         videoStream = stream;
 
@@ -3433,7 +3433,7 @@ async function startQRDecoding(video) {
             // Use jsQR library for real QR decoding
             if (typeof jsQR !== 'undefined') {
                 const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                    inversionAttempts: 'dontInvert',
+                    inversionAttempts: 'attemptBoth',
                 });
 
                 if (code) {
@@ -3565,7 +3565,21 @@ function scanAnother() {
 // so this has to be a real, reachable URL (works out of the box once
 // ze-payroll and scan.html are deployed at the same origin).
 function getKioskScanUrl(employeeId) {
-    return new URL(`scan.html?emp=${encodeURIComponent(employeeId)}`, window.location.href).toString();
+    const url = new URL(`scan.html?emp=${encodeURIComponent(employeeId)}`, window.location.href).toString();
+
+    if (window.location.protocol === 'file:' && !window.__qrFileProtocolWarned) {
+        window.__qrFileProtocolWarned = true;
+        console.warn(
+            'ze-payroll is running from a local file:// path. QR codes will encode this ' +
+            'long local path and be harder to scan. Serve the app from a real web server ' +
+            '(or a static host) so the QR payload stays short.'
+        );
+        if (typeof showToast === 'function') {
+            showToast('Tip: host this app on a real web server for shorter, easier-to-scan QR codes.', 'warning');
+        }
+    }
+
+    return url;
 }
 
 function generateAllQRCodes() {
@@ -3606,24 +3620,33 @@ function viewQREmployee(id) {
     showModal('qrModal');
 }
 
+const QR_RENDER_SIZE = 220;
+const QR_QUIET_ZONE = 20;
+
 function generateRealQRCode(data, elementId) {
     const element = document.getElementById(elementId);
     if (!element) return;
 
-    // Use QRCode library if available
+    element.style.cssText = `
+        display: inline-block;
+        background: #ffffff;
+        padding: ${QR_QUIET_ZONE}px;
+        border-radius: 4px;
+        line-height: 0;
+    `;
+
     if (typeof QRCode !== 'undefined') {
         new QRCode(element, {
             text: data,
-            width: 150,
-            height: 150,
+            width: QR_RENDER_SIZE,
+            height: QR_RENDER_SIZE,
             colorDark: '#000000',
             colorLight: '#ffffff',
-            correctLevel: QRCode.CorrectLevel.M
+            correctLevel: QRCode.CorrectLevel.Q
         });
     } else {
-        // Fallback - simple visual
         element.innerHTML = `
-            <div style="width:150px;height:150px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border:1px solid #ddd;border-radius:8px;">
+            <div style="width:${QR_RENDER_SIZE}px;height:${QR_RENDER_SIZE}px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border:1px solid #ddd;border-radius:8px;">
                 <span style="font-size:12px;color:#666;">QR: ${data}</span>
             </div>
         `;
