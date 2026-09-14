@@ -929,8 +929,12 @@ body {
 }
 
 .qr-card img {
-    max-width: 150px;
-    height: 150px;
+    max-width: 220px;
+    height: 220px;
+}
+
+.qr-card {
+    background: #ffffff;
 }
 
 .qr-card .qr-name {
@@ -1496,5 +1500,22 @@ td.paste-dtr-day-cell {
         box-shadow: none;
         border: 1px solid var(--gray-300);
         break-inside: avoid;
+    }
+
+    .qr-grid {
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 24px;
+    }
+
+    .qr-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        border: 1px solid #ccc;
+        background: #ffffff !important;
+        color: #000000;
+    }
+
+    .qr-card .qr-name {
+        color: #000000;
     }
 }
