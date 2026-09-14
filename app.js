@@ -2841,6 +2841,7 @@ function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
         hourlyRate,
         baseDailyPay,
         regularPay,
+        otRate,
         otPay,
         lateDeduction,
         lateMinutes: dtrs.reduce((sum, d) => sum + (d.lateMinutes || 0), 0),
