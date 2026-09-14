@@ -6,8 +6,11 @@
 // Supabase client
 // employees & dtr_entries live in Supabase (see supabase/migrations)
 // so an employee's own phone (kiosk scan) and the admin dashboard
-// both read/write the same data, live. Everything else (settings,
-// payroll run history) still lives in localStorage for now.
+// both read/write the same data, live. Settings & company info also
+// sync through Supabase (app_config table, see loadSettings() /
+// syncFullConfigToSupabase()) so every device an admin signs into
+// shows the same Settings page - localStorage is kept only as an
+// offline cache. Payroll run history still lives in localStorage only.
 // ------------------------------------------------
 const supabaseClient = (window.supabase && typeof SUPABASE_URL !== 'undefined' && SUPABASE_URL && !SUPABASE_URL.includes('YOUR-PROJECT'))
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -115,7 +118,7 @@ document.addEventListener('DOMContentLoaded', updateThemeToggleIcon);
 
 // Initialize App
 async function initializeApp() {
-    loadSettings();
+    await loadSettings();
     await loadEmployees();
     await loadDTR();
     loadPayroll();
@@ -453,13 +456,57 @@ let processedPayroll = [];
 // Settings Functions
 // ============================================
 
-function loadSettings() {
-    const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-    settings = stored ? JSON.parse(stored) : { ...defaultSettings };
+// Settings/company used to be pure localStorage - which meant an admin
+// signing in from a PC and then a phone saw two unrelated copies (each
+// browser's own local storage), which is exactly the "different
+// settings on different devices" symptom this fixes. app_config (see
+// supabase/migrations/008_app_config_sync.sql) is now the shared
+// source of truth; localStorage is kept only as an offline cache and
+// as the seed the very first time this runs against a fresh table.
+async function loadSettings() {
+    let remoteSettings = null;
+    let remoteCompany = null;
 
-    // Load company settings
-    const companyStored = localStorage.getItem(STORAGE_KEYS.COMPANY);
-    company = companyStored ? JSON.parse(companyStored) : { ...defaultCompany };
+    if (supabaseClient) {
+        try {
+            const { data, error } = await supabaseClient
+                .from('app_config')
+                .select('settings, company')
+                .eq('id', 1)
+                .maybeSingle();
+            if (error) {
+                console.error('Failed to load settings from Supabase, using this device\'s local copy for now:', error);
+            } else if (data) {
+                if (data.settings && Object.keys(data.settings).length) remoteSettings = data.settings;
+                if (data.company && Object.keys(data.company).length) remoteCompany = data.company;
+            }
+        } catch (err) {
+            console.error('Failed to load settings from Supabase, using this device\'s local copy for now:', err);
+        }
+    }
+
+    const localSettingsStored = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    if (remoteSettings) {
+        // Supabase is shared across every device - it wins. Refresh this
+        // device's local cache to match so Settings still opens offline.
+        settings = { ...defaultSettings, ...remoteSettings };
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    } else {
+        settings = localSettingsStored ? { ...defaultSettings, ...JSON.parse(localSettingsStored) } : { ...defaultSettings };
+        // Nothing shared yet (first load since this device's Supabase
+        // project ran the app_config migration, or currently offline) -
+        // if this device already has real settings saved, seed the
+        // shared row so every other device picks them up from here on.
+        if (supabaseClient && localSettingsStored) syncFullConfigToSupabase();
+    }
+
+    const localCompanyStored = localStorage.getItem(STORAGE_KEYS.COMPANY);
+    if (remoteCompany) {
+        company = { ...defaultCompany, ...remoteCompany };
+        localStorage.setItem(STORAGE_KEYS.COMPANY, JSON.stringify(company));
+    } else {
+        company = localCompanyStored ? { ...defaultCompany, ...JSON.parse(localCompanyStored) } : { ...defaultCompany };
+    }
     populateCompanyForm();
 
     // Populate settings form
@@ -522,6 +569,25 @@ function loadSettings() {
 
     // Update default values in employee form
     document.getElementById('baseDailyPayInput').value = settings.baseDailyPay || 500.00;
+}
+
+// Pushes the full settings + company objects to the shared Supabase
+// `app_config` row, so every device/browser signed into this account
+// loads the same Settings page. Separate from syncAttendanceSettingsToSupabase(),
+// which pushes only the narrow slice payroll_settings needs for the
+// kiosk RPC - this covers everything else (OT rate, late-deduction
+// peso amounts, statutory options, pay periods, company info, etc.).
+async function syncFullConfigToSupabase() {
+    if (!supabaseClient) return;
+    const { error } = await supabaseClient.from('app_config').upsert({
+        id: 1,
+        settings,
+        company
+    }, { onConflict: 'id' });
+    if (error) {
+        console.error('Failed to sync settings to Supabase:', error);
+        showToast('Saved on this device, but failed to sync to your other devices: ' + error.message, 'error');
+    }
 }
 
 function saveSettings() {
@@ -627,6 +693,7 @@ function saveSettings() {
     populatePayrollPeriodOptions();
     loadPayroll();
     syncAttendanceSettingsToSupabase();
+    syncFullConfigToSupabase();
 }
 
 // Pushes the schedule/late-rule/timezone/geofence settings to the shared
@@ -794,6 +861,7 @@ function saveCompanySettings() {
 
     localStorage.setItem(STORAGE_KEYS.COMPANY, JSON.stringify(company));
     showToast('Company settings saved successfully!', 'success');
+    syncFullConfigToSupabase();
 }
 
 function populateCompanyForm() {
@@ -3895,8 +3963,13 @@ function importData(input) {
             }
 
             if (data.settings) {
-                settings = data.settings;
+                settings = { ...defaultSettings, ...data.settings };
                 localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+                // Push the imported settings to the shared row too - otherwise
+                // the loadSettings() call below would immediately overwrite
+                // them again with whatever was already synced from another
+                // device.
+                await syncFullConfigToSupabase();
             }
 
             if (Array.isArray(data.employees) && data.employees.length > 0) {
@@ -3924,7 +3997,7 @@ function importData(input) {
                 if (error) showToast('Some DTR entries failed to import: ' + error.message, 'error');
             }
 
-            loadSettings();
+            await loadSettings();
             await loadEmployees();
             await loadDTR();
             updateDashboard();
