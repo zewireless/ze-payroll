@@ -3672,18 +3672,23 @@ function updateDashboard() {
     const lateToday = todayDTR.filter(d => d.status === 'late');
     document.getElementById('lateToday').textContent = lateToday.length;
 
-    // Total payroll (estimated for current month)
+    // Total payroll for the current month, month-to-date. Reuses the same
+    // computeEmployeePayroll() the Payroll and Reports tabs use, so this
+    // number actually matches what those pages show instead of a rough
+    // "days present x base pay" guess that ignored OT, deductions, and
+    // half-days.
     const [curY, curM] = getTodayYearMonthStr().split('-').map(Number);
     const monthStart = getMonthStartStr(curY, curM);
-    const monthDTR = dtrEntries.filter(d => d.date >= monthStart);
-    const totalPayroll = monthDTR.reduce((sum, d) => {
-        const emp = employees.find(e => e.id === d.employeeId);
-        if (!emp) return sum;
-        if (d.status === 'present' || d.status === 'late') {
-            return sum + (emp.baseDailyPay || settings.baseDailyPay || 500);
-        }
-        return sum;
-    }, 0);
+    const monthEnd = getMonthEndStr(curY, curM);
+    const monthDTR = dtrEntries.filter(d => d.date >= monthStart && d.date <= monthEnd);
+    const totalPayroll = employees
+        .filter(e => e.status === 'active')
+        .reduce((sum, emp) => {
+            const empDTRs = monthDTR.filter(d => d.employeeId === emp.id);
+            if (empDTRs.length === 0) return sum;
+            const payrollData = computeEmployeePayroll(emp, empDTRs, monthStart, monthEnd);
+            return sum + payrollData.netPay;
+        }, 0);
     document.getElementById('totalPayroll').textContent = '₱' + formatNumber(totalPayroll);
 
     // Recent DTR entries
