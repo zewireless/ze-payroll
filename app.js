@@ -51,16 +51,17 @@ async function checkAuth() {
 }
 
 // Gate the dashboard behind the client's subscription (see
-// supabase/migrations/009_saas_billing.sql). Fails OPEN (lets the admin
-// in) if that migration hasn't been run yet or the RPC call itself
-// errors out - a billing check that can't reach the server should
-// never be what locks a paying admin out of their own payroll.
+// supabase/migrations/009_saas_billing.sql + 010_client_plan_selection.sql).
+// Fails OPEN (lets the admin in) if those migrations haven't been run
+// yet or the RPC call itself errors out - a billing check that can't
+// reach the server should never be what locks a paying admin out of
+// their own payroll.
 async function checkBillingThenEnter() {
     document.getElementById('billingBlockedModal').classList.add('hidden');
 
     const { data, error } = await supabaseClient.rpc('get_my_billing');
     if (error || !data || Object.keys(data).length === 0) {
-        // 009_saas_billing.sql not run yet, or this account predates it -
+        // Migrations not run yet, or this account predates them -
         // behave exactly like before (no billing gate at all).
         initializeApp();
         return;
@@ -68,40 +69,190 @@ async function checkBillingThenEnter() {
 
     const periodEnd = data.period_end ? new Date(data.period_end) : null;
     const expired = periodEnd ? periodEnd.getTime() < Date.now() : false;
-    const blocked = data.status === 'cancelled' || data.status === 'overdue' || expired;
+    const hasAccess = (data.status === 'trial' || data.status === 'active') && !expired;
 
-    if (!blocked) {
+    if (hasAccess) {
         initializeApp();
         return;
     }
 
-    renderBillingBlocked(data, expired);
+    await renderBillingGate(data, expired);
 }
 
-function renderBillingBlocked(data, expired) {
+// The paywall shown at login when an account has no active plan yet:
+// a brand-new signup ('never'), an expired trial/subscription, a
+// cancelled account, or one sitting on a still-pending payment claim.
+async function renderBillingGate(data, expired) {
+    if (data.pending_payment) {
+        renderPendingClaim(data);
+        document.getElementById('billingBlockedModal').classList.remove('hidden');
+        return;
+    }
+
     const title = document.getElementById('billingBlockedTitle');
     const sub = document.getElementById('billingBlockedSub');
     const body = document.getElementById('billingBlockedBody');
 
-    if (data.status === 'cancelled') {
+    if (data.status === 'never') {
+        title.textContent = `Welcome, ${data.business_name || 'there'}!`;
+        sub.textContent = 'Pick a plan to unlock your dashboard.';
+    } else if (data.status === 'cancelled') {
         title.textContent = 'Your subscription is cancelled';
         sub.textContent = 'Choose a plan to reactivate your account.';
-    } else if (expired && data.status === 'trial') {
-        title.textContent = 'Your free trial has ended';
+    } else if (expired) {
+        title.textContent = data.status === 'trial' ? 'Your free trial has ended' : 'Your subscription has expired';
         sub.textContent = `Pick a plan to keep using ${data.business_name || 'ZE Payroll'}.`;
     } else {
-        title.textContent = 'Payment pending';
-        sub.textContent = 'Your plan will activate as soon as we confirm your payment.';
+        title.textContent = 'Choose a plan to get started';
+        sub.textContent = '';
     }
 
-    body.innerHTML = `
-        <p><b>Plan:</b> ${data.plan_name || '—'}${data.price ? ` (₱${Number(data.price).toLocaleString()})` : ''}</p>
-        ${data.period_end ? `<p><b>Period end:</b> ${new Date(data.period_end).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })}</p>` : ''}
-        <p style="margin-top:10px; color:var(--gray-500);">Already paid? Send your proof of payment to
-        <b>ev.lounel4195@gmail.com</b> and we'll activate your plan within one business day.</p>
+    body.innerHTML = `<div id="planPickerList" style="text-align:left;">Loading plans…</div>`;
+    document.getElementById('billingBlockedModal').classList.remove('hidden');
+
+    const { data: plans, error: plansError } = await supabaseClient
+        .from('plans')
+        .select('*')
+        .eq('active', true)
+        .order('sort_order');
+
+    if (plansError || !plans || plans.length === 0) {
+        document.getElementById('planPickerList').innerHTML = `<p style="color:var(--danger);">Could not load plans. Please contact support.</p>`;
+        return;
+    }
+
+    renderPlanPicker(plans, data);
+}
+
+let billingSelectedPlanId = null;
+let billingSelectedMethod = 'gcash';
+
+function renderPlanPicker(plans, billing) {
+    const selectable = plans.filter(p => !(p.price == 0 && billing.trial_used));
+    if (!billingSelectedPlanId || !selectable.some(p => p.id === billingSelectedPlanId)) {
+        billingSelectedPlanId = (selectable[0] || plans[0] || {}).id || null;
+    }
+
+    const cardsHtml = plans.map(p => {
+        const isUsedTrial = p.price == 0 && billing.trial_used;
+        const selected = p.id === billingSelectedPlanId && !isUsedTrial;
+        return `
+            <div class="plan-pick-card ${selected ? 'selected' : ''}" data-plan-id="${isUsedTrial ? '' : p.id}"
+                style="border:2px solid ${selected ? 'var(--primary)' : 'var(--gray-200)'}; border-radius:10px; padding:12px 14px; margin-bottom:8px;
+                       cursor:${isUsedTrial ? 'not-allowed' : 'pointer'}; opacity:${isUsedTrial ? '.55' : '1'};">
+                <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                    <b>${p.name}</b>
+                    <span style="font-weight:700;">₱${Number(p.price).toLocaleString()}${p.price > 0 ? `<small style="font-weight:500; color:var(--gray-500);"> / ${p.duration_days}d</small>` : ''}</span>
+                </div>
+                <div style="font-size:11.5px; color:var(--gray-500); margin-top:2px;">${(p.features || []).join(' · ')}${isUsedTrial ? ' · Already used' : ''}</div>
+            </div>
+        `;
+    }).join('');
+
+    const selectedPlan = plans.find(p => p.id === billingSelectedPlanId);
+    const isFree = selectedPlan && Number(selectedPlan.price) === 0;
+
+    const methodsHtml = ['gcash', 'maya', 'bank'].map(m => `
+        <button type="button" class="btn ${m === billingSelectedMethod ? 'btn-primary' : 'btn-outline'} btn-sm pick-method-btn" data-method="${m}" style="text-transform:capitalize;">${m}</button>
+    `).join(' ');
+
+    document.getElementById('planPickerList').innerHTML = `
+        <div id="planCards">${cardsHtml}</div>
+        ${isFree ? '' : `
+            <div style="margin:14px 0 8px; font-size:12.5px; font-weight:600; color:var(--gray-600);">Payment Method</div>
+            <div style="display:flex; gap:6px; margin-bottom:10px;">${methodsHtml}</div>
+            <input type="text" id="planPickerReference" placeholder="Reference # (optional, e.g. GCash ref)"
+                style="width:100%; padding:9px 11px; border-radius:8px; border:1px solid var(--gray-200); font-size:13px; margin-bottom:6px;">
+            <p style="font-size:11.5px; color:var(--gray-500); margin-bottom:10px;">
+                Send payment to <b>ev.lounel4195@gmail.com</b>'s GCash/Maya/bank (details on the pricing page), then submit below.
+                We'll confirm and activate your plan within one business day.
+            </p>
+        `}
+        <button class="btn btn-primary" id="planPickerSubmit" style="width:100%;">
+            ${isFree ? 'Start Free Trial' : 'Submit Payment'}
+        </button>
+        <div id="planPickerError" style="color:var(--danger); font-size:12.5px; margin-top:8px; display:none;"></div>
     `;
 
-    document.getElementById('billingBlockedModal').classList.remove('hidden');
+    document.querySelectorAll('.plan-pick-card').forEach(card => {
+        const id = card.getAttribute('data-plan-id');
+        if (!id) return;
+        card.addEventListener('click', () => {
+            billingSelectedPlanId = id;
+            renderPlanPicker(plans, billing);
+        });
+    });
+    document.querySelectorAll('.pick-method-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            billingSelectedMethod = btn.getAttribute('data-method');
+            renderPlanPicker(plans, billing);
+        });
+    });
+
+    document.getElementById('planPickerSubmit').addEventListener('click', async () => {
+        const errEl = document.getElementById('planPickerError');
+        errEl.style.display = 'none';
+        if (!billingSelectedPlanId) return;
+
+        const btn = document.getElementById('planPickerSubmit');
+        btn.disabled = true;
+        btn.textContent = 'Submitting…';
+
+        const reference = document.getElementById('planPickerReference')
+            ? document.getElementById('planPickerReference').value.trim() || null
+            : null;
+
+        const { data: result, error } = await supabaseClient.rpc('submit_payment_claim', {
+            p_plan_id: billingSelectedPlanId,
+            p_method: billingSelectedMethod,
+            p_reference: reference
+        });
+
+        if (error) {
+            errEl.textContent = error.message || 'Could not submit. Please try again.';
+            errEl.style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = isFree ? 'Start Free Trial' : 'Submit Payment';
+            return;
+        }
+
+        if (result && result.activated) {
+            // Free trial - activated instantly, straight into the dashboard.
+            document.getElementById('billingBlockedModal').classList.add('hidden');
+            initializeApp();
+        } else {
+            // Paid plan - now sitting as a pending claim awaiting approval.
+            await checkBillingThenEnter();
+        }
+    });
+}
+
+function renderPendingClaim(data) {
+    const title = document.getElementById('billingBlockedTitle');
+    const sub = document.getElementById('billingBlockedSub');
+    const body = document.getElementById('billingBlockedBody');
+    const p = data.pending_payment;
+
+    title.textContent = 'Payment Under Review';
+    sub.textContent = "We've received your submission and it's awaiting confirmation.";
+
+    body.innerHTML = `
+        <div style="background:var(--gray-50); border-radius:10px; padding:14px; margin-bottom:14px;">
+            <div><b>Plan:</b> ${p.plan_name || '—'}</div>
+            <div><b>Amount:</b> ₱${Number(p.amount).toLocaleString()}</div>
+            <div><b>Method:</b> <span style="text-transform:capitalize;">${p.method}</span></div>
+            <div style="color:var(--gray-500); font-size:11.5px; margin-top:4px;">Submitted ${new Date(p.created_at).toLocaleString('en-PH')}</div>
+        </div>
+        <button class="btn btn-outline" id="pendingRefreshBtn" style="width:100%; margin-bottom:8px;"><i class="fas fa-rotate"></i> Refresh Status</button>
+        <button class="btn btn-outline" id="pendingCancelBtn" style="width:100%; color:var(--danger); border-color:var(--danger);">Cancel Submission</button>
+    `;
+
+    document.getElementById('pendingRefreshBtn').addEventListener('click', checkBillingThenEnter);
+    document.getElementById('pendingCancelBtn').addEventListener('click', async () => {
+        const { error } = await supabaseClient.rpc('cancel_payment_claim', { p_payment_id: p.id });
+        if (error) { showToast(error.message || 'Could not cancel submission', 'error'); return; }
+        await checkBillingThenEnter();
+    });
 }
 
 async function handleLogin() {

@@ -52,6 +52,8 @@
     .pill.active{background:rgba(34,197,94,.18); color:#4ade80;}
     .pill.overdue{background:rgba(234,179,8,.18); color:#fbbf24;}
     .pill.cancelled{background:rgba(239,68,68,.18); color:#f87171;}
+    .pill.never{background:rgba(255,255,255,.1); color:var(--dim);}
+    .pill.pending{background:rgba(234,179,8,.18); color:#fbbf24;}
     .row-actions{display:flex; gap:6px; flex-wrap:wrap;}
     .row-actions button{font-size:11.5px; padding:5px 10px; border-radius:7px; border:1px solid var(--line); background:transparent; color:#fff; cursor:pointer;}
     .row-actions button:hover{border-color:rgba(255,255,255,.3);}
@@ -211,12 +213,12 @@
         function renderStats() {
             const active = clients.filter(c => c.subscription_status === 'active').length;
             const trial = clients.filter(c => c.subscription_status === 'trial').length;
-            const overdue = clients.filter(c => c.subscription_status === 'overdue').length;
+            const pending = clients.filter(c => c.pending_payment_id).length;
             document.getElementById('statRow').innerHTML = `
                 <div class="stat"><b>${clients.length}</b><span>Total Clients</span></div>
                 <div class="stat"><b style="color:#4ade80;">${active}</b><span>Active</span></div>
                 <div class="stat"><b style="color:#60a5fa;">${trial}</b><span>On Trial</span></div>
-                <div class="stat"><b style="color:#fbbf24;">${overdue}</b><span>Awaiting Payment</span></div>
+                <div class="stat"><b style="color:#fbbf24;">${pending}</b><span>Awaiting Approval</span></div>
             `;
         }
 
@@ -232,12 +234,20 @@
                             <tr>
                                 <td><b>${c.business_name || '—'}</b><br><span style="color:var(--dim); font-size:11.5px;">${c.email || ''}</span></td>
                                 <td>${c.plan_name || '—'}</td>
-                                <td><span class="pill ${c.subscription_status}">${c.subscription_status}</span></td>
+                                <td>
+                                    <span class="pill ${c.subscription_status}">${c.subscription_status}</span>
+                                    ${c.pending_payment_id ? `<br><span class="pill pending" style="margin-top:4px; display:inline-block;">₱${Number(c.pending_amount).toLocaleString()} pending</span>` : ''}
+                                </td>
                                 <td>${fmtDate(c.current_period_end)}</td>
                                 <td>${fmtDate(c.created_at)}</td>
                                 <td>
                                     <div class="row-actions">
-                                        <button class="primary" onclick="openPayModal('${c.id}')">Record Payment</button>
+                                        ${c.pending_payment_id ? `
+                                            <button class="primary" onclick="approvePayment('${c.pending_payment_id}')">Approve</button>
+                                            <button onclick="rejectPayment('${c.pending_payment_id}')">Reject</button>
+                                        ` : `
+                                            <button class="primary" onclick="openPayModal('${c.id}')">Record Payment</button>
+                                        `}
                                         <button onclick="openStatusModal('${c.id}', '${c.subscription_status}')">Change Status</button>
                                     </div>
                                 </td>
@@ -247,6 +257,19 @@
                 </table>
             `;
         }
+
+        window.approvePayment = async function (paymentId) {
+            const { error } = await supabaseClient.rpc('admin_approve_payment', { p_payment_id: paymentId });
+            if (error) { alert('Could not approve: ' + error.message); return; }
+            await loadClients();
+        };
+
+        window.rejectPayment = async function (paymentId) {
+            const reason = prompt('Reason for rejecting (optional):') || null;
+            const { error } = await supabaseClient.rpc('admin_reject_payment', { p_payment_id: paymentId, p_reason: reason });
+            if (error) { alert('Could not reject: ' + error.message); return; }
+            await loadClients();
+        };
 
         window.openPayModal = function (id) {
             activePayId = id;
