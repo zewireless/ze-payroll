@@ -302,6 +302,7 @@ async function logout() {
     currentWorkspaceId = null;
     document.getElementById('billingBlockedModal').classList.add('hidden');
     document.getElementById('loginModal').classList.remove('hidden');
+    document.getElementById('adminNavLink')?.classList.add('hidden');
 }
 
 function toggleSidebar() {
@@ -348,6 +349,27 @@ async function initializeApp() {
     setupRealtimeSync();
     refreshAppClockDisplay();
     setInterval(refreshAppClockDisplay, 1000);
+    checkSuperAdminNav();
+}
+
+// ------------------------------------------------
+// Super-admin sidebar link
+// Shows the "Admin Panel" nav item (-> admin.html) only for the
+// account(s) flagged is_super_admin in Supabase. Everyone else never
+// sees it - matches the gate admin.html itself enforces, so this is
+// just a convenience shortcut, not the actual security boundary.
+// ------------------------------------------------
+async function checkSuperAdminNav() {
+    const link = document.getElementById('adminNavLink');
+    if (!link || !supabaseClient || !currentWorkspaceId) return;
+
+    const { data: profile, error } = await supabaseClient
+        .from('profiles')
+        .select('is_super_admin')
+        .eq('id', currentWorkspaceId)
+        .single();
+
+    link.classList.toggle('hidden', !!error || !profile || !profile.is_super_admin);
 }
 
 document.addEventListener('DOMContentLoaded', checkAuth);
