@@ -12,9 +12,9 @@
 -- = the admin's own auth user id) and locks RLS down to
 -- `workspace_id = auth.uid()`.
 --
--- THIS FILE IS IN THREE PARTS. Run them IN ORDER, and read the note
--- before Part 2 - it requires one manual step (finding your own
--- existing admin account's user id) before it's safe to run.
+-- THIS FILE IS IN THREE PARTS. Run them IN ORDER.
+-- Part 2's admin UID has already been filled in below with:
+--   55127f81-ae2d-4668-b33e-ebacd8714884  (ev.lounel4195@gmail.com)
 -- =============================================================
 
 
@@ -63,45 +63,16 @@ $$;
 
 
 -- #############################################################
--- STOP AND READ before Part 2.
---
--- Part 2 assigns all of your EXISTING employees/DTR/settings/config
--- rows (the ones already in this database - your pilot client's real
--- data) to one specific workspace_id: your own admin account's user
--- id, i.e. whichever Supabase Auth account you've been logging into
--- app.html with all along.
---
--- Run this SELECT first to find it:
---
---     select id, email, created_at from auth.users order by created_at;
---
--- Look at the list and copy the `id` (a UUID) next to the email you
--- use to log into app.html for your own business's payroll. Then
--- open Part 2 below, replace every occurrence of
--- 'PASTE-YOUR-ADMIN-USER-ID-HERE' with that UUID (keep the quotes),
--- and run Part 2.
---
--- If that email hasn't registered through register.html yet (e.g.
--- it's an account you created directly in the Supabase dashboard
--- before self-registration existed), it won't have a `profiles` row
--- yet either - Part 2 creates one for it automatically.
--- #############################################################
-
-
--- #############################################################
--- PART 2 - EDIT THE UUID BELOW, THEN RUN.
+-- PART 2 - admin UID already filled in below. Run this block
+-- (the do $$ ... end $$;) on its own, after Part 1 succeeds.
 -- #############################################################
 
 do $$
 declare
-    v_admin_id uuid := 'PASTE-YOUR-ADMIN-USER-ID-HERE';
+    v_admin_id uuid := '55127f81-ae2d-4668-b33e-ebacd8714884';
 begin
-    if v_admin_id::text = 'PASTE-YOUR-ADMIN-USER-ID-HERE' then
-        raise exception 'Edit this file: replace PASTE-YOUR-ADMIN-USER-ID-HERE with your real admin user id (see the instructions above) before running Part 2.';
-    end if;
-
     if not exists (select 1 from auth.users where id = v_admin_id) then
-        raise exception 'No auth.users row with id %. Double-check you copied the UUID correctly from the SELECT above.', v_admin_id;
+        raise exception 'No auth.users row with id %. Double-check you copied the UUID correctly.', v_admin_id;
     end if;
 
     -- Make sure this admin has a profile (creates one, on a free
@@ -173,7 +144,11 @@ create policy "own workspace only" on public.app_config
     with check (workspace_id = auth.uid());
 
 -- ---- Kiosk view: needs workspace_id so scan.html knows whose employee list to check ----
-create or replace view public.employees_kiosk_view as
+-- (dropped and recreated instead of CREATE OR REPLACE, since Postgres
+-- won't let REPLACE insert a new column in the middle of a view's
+-- column list - it only allows appending columns at the end)
+drop view if exists public.employees_kiosk_view;
+create view public.employees_kiosk_view as
     select id, workspace_id, first_name, last_name, status
     from public.employees;
 
