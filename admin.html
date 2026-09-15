@@ -3,331 +3,653 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ZE Payroll — Admin</title>
+<title>ze-payroll — Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<!--
+  Expects the same supabase-config.js used elsewhere in the app,
+  defining window.SUPABASE_URL and window.SUPABASE_ANON_KEY.
+  If your config.js exports different names, adjust the two lines
+  near the top of the <script> block below.
+-->
+<script src="supabase-config.js"></script>
 <style>
-    :root{
-        --ink:#0b0f1c; --panel:#131a30; --line:rgba(255,255,255,.08);
-        --blue:#2563eb; --lime:#c3ff4d; --green:#22c55e; --amber:#eab308; --red:#ef4444;
-        --dim:#9aa4c4; --display:'Space Grotesk', sans-serif; --body:'Manrope', sans-serif;
-    }
-    *{box-sizing:border-box; margin:0; padding:0;}
-    body{font-family:var(--body); background:var(--ink); color:#fff; min-height:100vh;}
-    h1,h2,h3{font-family:var(--display); letter-spacing:-.01em;}
+  :root{
+    --bg:#0D1013; --surface:#161A1F; --surface-2:#1D222A; --surface-3:#242B34;
+    --border:#2A313B; --border-soft:#20262E;
+    --text:#E7E9EC; --text-muted:#8D96A3; --text-faint:#5C6470;
+    --gold:#E3A23C; --gold-soft:#3A2E1C;
+    --green:#35B37E; --green-soft:#16281F;
+    --red:#E5555F; --red-soft:#2E1A1C;
+    --blue:#5B8DEF; --blue-soft:#182234;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:'Inter',system-ui,sans-serif; font-size:14px; line-height:1.5;
+    min-height:100vh;
+  }
+  h1,h2,h3,.brand{font-family:'Space Grotesk',system-ui,sans-serif;}
+  a{color:inherit;}
+  button{font-family:inherit; font-size:13px; cursor:pointer;}
+  input,select,textarea{font-family:inherit; font-size:13px;}
 
-    /* ---- Login gate ---- */
-    #gate{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;}
-    .gate-card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:32px; width:100%; max-width:360px;}
-    .gate-card h2{font-size:20px; margin-bottom:6px;}
-    .gate-card p{color:var(--dim); font-size:13px; margin-bottom:20px;}
-    .gate-card input{width:100%; padding:11px 13px; margin-bottom:12px; border-radius:9px; border:1px solid var(--line); background:#0b0f1c; color:#fff; font-size:14px;}
-    .gate-card button{width:100%; padding:12px; border:none; border-radius:999px; background:var(--blue); color:#fff; font-weight:700; cursor:pointer; font-size:14px;}
-    .gate-err{color:var(--red); font-size:13px; margin-bottom:10px; display:none;}
+  /* ---- header ---- */
+  header{
+    position:sticky; top:0; z-index:20;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 24px; background:rgba(13,16,19,0.92); backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border-soft);
+  }
+  .brand{display:flex; align-items:center; gap:10px; font-weight:600; font-size:17px;}
+  .brand .mark{
+    width:28px; height:28px; border-radius:7px; background:var(--gold);
+    color:#1a1408; display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:14px;
+  }
+  .header-actions{display:flex; align-items:center; gap:10px;}
+  .btn{
+    border:1px solid var(--border); background:var(--surface-2); color:var(--text);
+    padding:8px 14px; border-radius:8px; font-weight:500; transition:border-color .15s, background .15s;
+  }
+  .btn:hover{border-color:#3A424E; background:var(--surface-3);}
+  .btn-primary{background:var(--gold); border-color:var(--gold); color:#1a1408; font-weight:600;}
+  .btn-primary:hover{background:#EDB35A;}
+  .btn-danger{background:transparent; border-color:var(--red); color:var(--red);}
+  .btn-danger:hover{background:var(--red-soft);}
+  .btn-ghost{background:transparent; border-color:transparent;}
+  .btn-ghost:hover{background:var(--surface-2);}
+  .btn-sm{padding:5px 10px; font-size:12px; border-radius:6px;}
+  .btn:disabled{opacity:.5; cursor:not-allowed;}
 
-    /* ---- Dashboard ---- */
-    #dash{display:none; max-width:1100px; margin:0 auto; padding:28px 20px 80px;}
-    .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:26px; flex-wrap:wrap; gap:12px;}
-    .topbar .brand{display:flex; align-items:center; gap:10px; font-weight:700; font-size:17px;}
-    .topbar .brand span{width:30px; height:30px; border-radius:8px; background:var(--blue); display:flex; align-items:center; justify-content:center; font-family:var(--display); font-size:12px;}
-    .topbar .actions{display:flex; gap:10px; align-items:center; font-size:13px; color:var(--dim);}
-    .topbar .actions a, .topbar .actions button{color:var(--dim); background:none; border:1px solid var(--line); border-radius:999px; padding:7px 14px; cursor:pointer; font-size:13px; font-family:var(--body);}
-    .topbar .actions a:hover, .topbar .actions button:hover{color:#fff; border-color:rgba(255,255,255,.25);}
+  main{max-width:1080px; margin:0 auto; padding:28px 24px 80px;}
+  section{margin-bottom:36px;}
+  .section-head{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; gap:12px; flex-wrap:wrap;}
+  .section-head h2{margin:0; font-size:17px; font-weight:600;}
+  .section-sub{color:var(--text-muted); font-size:12.5px; margin-top:2px;}
+  .count-badge{
+    display:inline-flex; align-items:center; justify-content:center;
+    min-width:20px; height:20px; padding:0 6px; border-radius:10px;
+    background:var(--gold-soft); color:var(--gold); font-size:12px; font-weight:600; margin-left:8px;
+  }
 
-    .stat-row{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px;}
-    .stat{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px;}
-    .stat b{display:block; font-family:var(--display); font-size:22px;}
-    .stat span{font-size:12px; color:var(--dim);}
+  .empty{
+    padding:32px 20px; text-align:center; color:var(--text-muted);
+    border:1px dashed var(--border); border-radius:var(--radius); font-size:13px;
+  }
+  .skeleton{padding:20px; color:var(--text-faint); font-size:13px;}
 
-    .panel{background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden; margin-bottom:20px;}
-    .panel-head{padding:16px 18px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;}
-    .panel-head h3{font-size:15px;}
-    table{width:100%; border-collapse:collapse; font-size:13px;}
-    th{text-align:left; padding:10px 18px; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); border-bottom:1px solid var(--line);}
-    td{padding:12px 18px; border-bottom:1px solid var(--line); vertical-align:middle;}
-    tr:last-child td{border-bottom:none;}
-    .pill{font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:999px; text-transform:capitalize;}
-    .pill.trial{background:rgba(37,99,235,.18); color:#60a5fa;}
-    .pill.active{background:rgba(34,197,94,.18); color:#4ade80;}
-    .pill.overdue{background:rgba(234,179,8,.18); color:#fbbf24;}
-    .pill.cancelled{background:rgba(239,68,68,.18); color:#f87171;}
-    .pill.never{background:rgba(255,255,255,.1); color:var(--dim);}
-    .pill.pending{background:rgba(234,179,8,.18); color:#fbbf24;}
-    .row-actions{display:flex; gap:6px; flex-wrap:wrap;}
-    .row-actions button{font-size:11.5px; padding:5px 10px; border-radius:7px; border:1px solid var(--line); background:transparent; color:#fff; cursor:pointer;}
-    .row-actions button:hover{border-color:rgba(255,255,255,.3);}
-    .row-actions button.primary{background:var(--blue); border-color:var(--blue);}
-    .empty{padding:30px 18px; text-align:center; color:var(--dim); font-size:13px;}
+  /* ---- pending cards ---- */
+  .pending-list{display:flex; flex-direction:column; gap:10px;}
+  .pending-card{
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--gold);
+    border-radius:var(--radius); padding:14px 16px;
+  }
+  .pending-info{display:flex; flex-direction:column; gap:3px; min-width:0;}
+  .pending-biz{font-weight:600; font-size:14px;}
+  .pending-meta{color:var(--text-muted); font-size:12.5px;}
+  .pending-amount{font-family:'Space Grotesk'; font-weight:600; color:var(--gold); font-size:15px; white-space:nowrap;}
+  .pending-actions{display:flex; gap:8px; flex-shrink:0;}
 
-    /* ---- Modal ---- */
-    .modal-bg{position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:50; padding:20px;}
-    .modal-bg.show{display:flex;}
-    .modal{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:24px; width:100%; max-width:380px;}
-    .modal h3{font-size:16px; margin-bottom:16px;}
-    .modal label{display:block; font-size:12px; color:var(--dim); margin-bottom:5px; margin-top:12px;}
-    .modal input, .modal select{width:100%; padding:9px 11px; border-radius:8px; border:1px solid var(--line); background:#0b0f1c; color:#fff; font-size:13.5px;}
-    .modal-footer{display:flex; gap:8px; margin-top:20px;}
-    .modal-footer button{flex:1; padding:10px; border-radius:8px; border:1px solid var(--line); background:transparent; color:#fff; cursor:pointer; font-size:13px;}
-    .modal-footer button.primary{background:var(--blue); border-color:var(--blue); font-weight:700;}
+  /* ---- filter bar ---- */
+  .filter-bar{display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap;}
+  .filter-bar input[type=text]{
+    flex:1; min-width:180px; background:var(--surface); border:1px solid var(--border);
+    color:var(--text); padding:8px 12px; border-radius:8px;
+  }
+  .filter-bar select{
+    background:var(--surface); border:1px solid var(--border); color:var(--text);
+    padding:8px 12px; border-radius:8px;
+  }
+  .filter-bar input:focus, .filter-bar select:focus{outline:none; border-color:var(--gold);}
+
+  /* ---- clients table ---- */
+  .table-wrap{border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;}
+  table{width:100%; border-collapse:collapse;}
+  thead th{
+    text-align:left; font-size:11.5px; font-weight:600; color:var(--text-faint);
+    padding:10px 14px; background:var(--surface-2); border-bottom:1px solid var(--border);
+  }
+  tbody td{padding:12px 14px; border-bottom:1px solid var(--border-soft); vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:var(--surface);}
+  .biz-cell .name{font-weight:600;}
+  .biz-cell .email{color:var(--text-muted); font-size:12px;}
+  .pill{
+    display:inline-flex; align-items:center; padding:3px 9px; border-radius:20px;
+    font-size:11.5px; font-weight:600;
+  }
+  .pill-trial{background:var(--blue-soft); color:var(--blue);}
+  .pill-active{background:var(--green-soft); color:var(--green);}
+  .pill-overdue{background:var(--gold-soft); color:var(--gold);}
+  .pill-cancelled, .pill-never{background:var(--red-soft); color:var(--red);}
+  .row-actions{display:flex; gap:6px; flex-wrap:wrap;}
+  .mini-select{
+    background:var(--surface-2); border:1px solid var(--border); color:var(--text);
+    padding:5px 8px; border-radius:6px; font-size:12px;
+  }
+  .period-end{font-size:12.5px;}
+  .period-end.warn{color:var(--gold);}
+  .period-end.expired{color:var(--red);}
+
+  /* ---- plans grid ---- */
+  .plans-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:14px;}
+  .plan-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:18px; display:flex; flex-direction:column; gap:10px; position:relative;
+  }
+  .plan-card.inactive{opacity:.5;}
+  .plan-card .plan-name{font-weight:600; font-size:15px;}
+  .plan-card .plan-price{font-family:'Space Grotesk'; font-size:22px; font-weight:600;}
+  .plan-card .plan-price small{font-size:12px; font-weight:500; color:var(--text-muted);}
+  .plan-card .plan-duration{color:var(--text-muted); font-size:12.5px;}
+  .plan-card ul{margin:0; padding-left:18px; color:var(--text-muted); font-size:12.5px; display:flex; flex-direction:column; gap:3px;}
+  .plan-card .plan-foot{display:flex; justify-content:space-between; align-items:center; margin-top:auto; padding-top:10px; border-top:1px solid var(--border-soft);}
+  .subscriber-count{color:var(--text-faint); font-size:11.5px;}
+  .new-plan-card{
+    border:1px dashed var(--border); border-radius:var(--radius); display:flex;
+    align-items:center; justify-content:center; color:var(--text-muted); font-weight:500;
+    min-height:160px; transition:border-color .15s, color .15s;
+  }
+  .new-plan-card:hover{border-color:var(--gold); color:var(--gold);}
+
+  /* ---- modal ---- */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(6,7,9,0.72); display:none;
+    align-items:center; justify-content:center; z-index:50; padding:20px;
+  }
+  .modal-overlay.open{display:flex;}
+  .modal{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:12px;
+    width:100%; max-width:420px; padding:24px; max-height:90vh; overflow-y:auto;
+  }
+  .modal h3{margin:0 0 4px;}
+  .modal .modal-sub{color:var(--text-muted); font-size:12.5px; margin-bottom:18px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12.5px; color:var(--text-muted); margin-bottom:5px; font-weight:500;}
+  .field input, .field textarea{
+    width:100%; background:var(--surface); border:1px solid var(--border); color:var(--text);
+    padding:9px 11px; border-radius:8px;
+  }
+  .field textarea{resize:vertical; min-height:64px;}
+  .field input:focus, .field textarea:focus{outline:none; border-color:var(--gold);}
+  .field-row{display:flex; gap:10px;}
+  .field-row .field{flex:1;}
+  .modal-actions{display:flex; justify-content:flex-end; gap:10px; margin-top:20px;}
+  .modal-error{color:var(--red); font-size:12.5px; margin-top:-6px; margin-bottom:12px; display:none;}
+
+  .gate{
+    max-width:440px; margin:120px auto; text-align:center; padding:32px 28px;
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  }
+  .gate h2{margin-top:0;}
+  .gate p{color:var(--text-muted); font-size:13.5px; line-height:1.6;}
+  .gate code{background:var(--surface-3); padding:2px 6px; border-radius:4px; font-size:12px;}
+
+  @media (max-width:640px){
+    .pending-card{flex-direction:column; align-items:flex-start;}
+    .pending-actions{width:100%;}
+    thead{display:none;}
+    table, tbody, tr, td{display:block; width:100%;}
+    tbody tr{border-bottom:1px solid var(--border); padding:10px 0;}
+    tbody td{border:none; padding:4px 0;}
+  }
 </style>
 </head>
 <body>
 
-    <!-- Login gate -->
-    <div id="gate">
-        <div class="gate-card">
-            <h2>Admin Sign In</h2>
-            <p>Super-admin access only.</p>
-            <div class="gate-err" id="gateErr"></div>
-            <input type="email" id="gateEmail" placeholder="Email">
-            <input type="password" id="gatePassword" placeholder="Password">
-            <button id="gateBtn">Sign In</button>
-        </div>
+<header>
+  <div class="brand"><span class="mark">₱</span> ze-payroll admin</div>
+  <div class="header-actions">
+    <a class="btn btn-ghost" href="app.html">Open payroll app</a>
+    <button class="btn" id="logoutBtn">Log out</button>
+  </div>
+</header>
+
+<main id="app" style="display:none;">
+
+  <section id="pendingSection">
+    <div class="section-head">
+      <div>
+        <h2>Pending subscriptions<span class="count-badge" id="pendingCount" style="display:none;">0</span></h2>
+        <div class="section-sub">Manual GCash / Maya / bank claims awaiting confirmation</div>
+      </div>
+      <button class="btn btn-sm" onclick="loadPending()">Refresh</button>
     </div>
+    <div id="pendingList"><div class="skeleton">Loading…</div></div>
+  </section>
 
-    <!-- Dashboard -->
-    <div id="dash">
-        <div class="topbar">
-            <div class="brand"><span>ZE</span> Admin Dashboard</div>
-            <div class="actions">
-                <span id="whoami"></span>
-                <a href="app.html">Open App</a>
-                <button id="logoutBtn">Logout</button>
-            </div>
-        </div>
-
-        <div class="stat-row" id="statRow"></div>
-
-        <div class="panel">
-            <div class="panel-head">
-                <h3>Clients & Subscriptions</h3>
-                <button id="refreshBtn" style="background:none; border:1px solid var(--line); color:var(--dim); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:12.5px;"><i class="fas fa-rotate"></i> Refresh</button>
-            </div>
-            <div id="clientTableWrap"><div class="empty">Loading…</div></div>
-        </div>
+  <section id="clientsSection">
+    <div class="section-head">
+      <div>
+        <h2>Clients &amp; subscriptions</h2>
+        <div class="section-sub">Every registered business on this account</div>
+      </div>
+      <button class="btn btn-sm" onclick="loadClients()">Refresh</button>
     </div>
-
-    <!-- Record payment modal -->
-    <div class="modal-bg" id="payModalBg">
-        <div class="modal">
-            <h3>Record Payment</h3>
-            <div id="payClientName" style="color:var(--dim); font-size:13px;"></div>
-            <label>Amount (₱)</label>
-            <input type="number" id="payAmount" step="0.01" min="0">
-            <label>Method</label>
-            <select id="payMethod">
-                <option value="gcash">GCash</option>
-                <option value="maya">Maya</option>
-                <option value="bank">Bank Transfer</option>
-                <option value="other">Other</option>
-            </select>
-            <label>Reference / note (optional)</label>
-            <input type="text" id="payReference" placeholder="e.g. GCash ref #, last 4 digits">
-            <div class="modal-footer">
-                <button id="payCancel">Cancel</button>
-                <button class="primary" id="payConfirm">Confirm Payment</button>
-            </div>
-        </div>
+    <div class="filter-bar">
+      <input type="text" id="clientSearch" placeholder="Search business or email…" oninput="renderClients()">
+      <select id="statusFilter" onchange="renderClients()">
+        <option value="">All statuses</option>
+        <option value="never">Never subscribed</option>
+        <option value="trial">Trial</option>
+        <option value="active">Active</option>
+        <option value="overdue">Overdue</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+      <select id="planFilter" onchange="renderClients()">
+        <option value="">All plans</option>
+      </select>
     </div>
-
-    <!-- Status change modal -->
-    <div class="modal-bg" id="statusModalBg">
-        <div class="modal">
-            <h3>Change Subscription Status</h3>
-            <div id="statusClientName" style="color:var(--dim); font-size:13px;"></div>
-            <label>New Status</label>
-            <select id="statusSelect">
-                <option value="trial">Trial</option>
-                <option value="active">Active</option>
-                <option value="overdue">Overdue</option>
-                <option value="cancelled">Cancelled</option>
-            </select>
-            <div class="modal-footer">
-                <button id="statusCancel">Cancel</button>
-                <button class="primary" id="statusConfirm">Save</button>
-            </div>
-        </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Business</th><th>Plan</th><th>Status</th><th>Period ends</th><th style="width:280px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="clientsBody"><tr><td colspan="5" class="skeleton">Loading…</td></tr></tbody>
+      </table>
     </div>
+  </section>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-config.js"></script>
-    <script>
-        const supabaseClient = (window.supabase && typeof SUPABASE_URL !== 'undefined' && SUPABASE_URL && !SUPABASE_URL.includes('YOUR-PROJECT'))
-            ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-            : null;
+  <section id="plansSection">
+    <div class="section-head">
+      <div>
+        <h2>Subscription plans</h2>
+        <div class="section-sub">What clients see on the pricing page at signup</div>
+      </div>
+    </div>
+    <div class="plans-grid" id="plansGrid"><div class="skeleton">Loading…</div></div>
+  </section>
 
-        let clients = [];
-        let activePayId = null;
-        let activeStatusId = null;
+</main>
 
-        function fmtDate(d) {
-            if (!d) return '—';
-            return new Date(d).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
-        }
+<div class="gate" id="gate" style="display:none;">
+  <h2>Not authorized</h2>
+  <p id="gateMessage">Checking admin access…</p>
+</div>
 
-        function showGateError(msg) {
-            const el = document.getElementById('gateErr');
-            el.textContent = msg;
-            el.style.display = 'block';
-        }
+<!-- Plan create/edit modal -->
+<div class="modal-overlay" id="planModalOverlay">
+  <div class="modal">
+    <h3 id="planModalTitle">New plan</h3>
+    <div class="modal-sub">Shown on the pricing page when active.</div>
+    <div class="modal-error" id="planModalError"></div>
+    <div class="field">
+      <label>Plan name</label>
+      <input type="text" id="planName" placeholder="e.g. 3-Month Plan">
+    </div>
+    <div class="field" id="planSlugField">
+      <label>Slug (internal, can't be changed later)</label>
+      <input type="text" id="planSlug" placeholder="e.g. 3mo">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Price (PHP)</label>
+        <input type="number" id="planPrice" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="field">
+        <label>Duration (days)</label>
+        <input type="number" id="planDuration" min="1" step="1" placeholder="30">
+      </div>
+    </div>
+    <div class="field">
+      <label>Features (one per line)</label>
+      <textarea id="planFeatures" placeholder="Unlimited employees&#10;QR &amp; manual attendance"></textarea>
+    </div>
+    <div class="field">
+      <label>Sort order</label>
+      <input type="number" id="planSortOrder" min="0" step="1" value="0">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closePlanModal()">Cancel</button>
+      <button class="btn btn-primary" id="planSaveBtn" onclick="savePlan()">Save plan</button>
+    </div>
+  </div>
+</div>
 
-        async function tryLogin() {
-            const email = document.getElementById('gateEmail').value.trim();
-            const password = document.getElementById('gatePassword').value;
-            document.getElementById('gateErr').style.display = 'none';
+<!-- Generic confirm modal -->
+<div class="modal-overlay" id="confirmOverlay">
+  <div class="modal" style="max-width:360px; text-align:center;">
+    <h3 id="confirmTitle">Are you sure?</h3>
+    <p class="modal-sub" id="confirmBody" style="margin-bottom:22px;"></p>
+    <div class="modal-actions" style="justify-content:center;">
+      <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-danger" id="confirmOkBtn">OK</button>
+    </div>
+  </div>
+</div>
 
-            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-            if (error) { showGateError(error.message); return; }
-            await checkAdminAccess();
-        }
+<script>
+/* ---------------------------------------------------------------
+   Adjust these two if your supabase-config.js exports different
+   variable names.
+--------------------------------------------------------------- */
+const SUPABASE_URL = window.SUPABASE_URL;
+const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY;
 
-        async function checkAdminAccess() {
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            if (!session) { document.getElementById('gate').style.display = 'flex'; document.getElementById('dash').style.display = 'none'; return; }
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-            const { data: isAdmin, error } = await supabaseClient.rpc('is_super_admin');
-            if (error || !isAdmin) {
-                showGateError('This account does not have admin access.');
-                await supabaseClient.auth.signOut();
-                return;
-            }
+let plansCache = [];
+let clientsCache = [];
 
-            document.getElementById('gate').style.display = 'none';
-            document.getElementById('dash').style.display = 'block';
-            document.getElementById('whoami').textContent = session.user.email;
-            await loadClients();
-        }
+const money = (n, currency) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: currency || 'PHP' }).format(n || 0);
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-PH', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
 
-        async function loadClients() {
-            const { data, error } = await supabaseClient.rpc('admin_list_clients');
-            if (error) {
-                document.getElementById('clientTableWrap').innerHTML = `<div class="empty">Couldn't load clients: ${error.message}</div>`;
-                return;
-            }
-            clients = data || [];
-            renderStats();
-            renderTable();
-        }
+async function init() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { window.location.href = 'index.html'; return; }
 
-        function renderStats() {
-            const active = clients.filter(c => c.subscription_status === 'active').length;
-            const trial = clients.filter(c => c.subscription_status === 'trial').length;
-            const pending = clients.filter(c => c.pending_payment_id).length;
-            document.getElementById('statRow').innerHTML = `
-                <div class="stat"><b>${clients.length}</b><span>Total Clients</span></div>
-                <div class="stat"><b style="color:#4ade80;">${active}</b><span>Active</span></div>
-                <div class="stat"><b style="color:#60a5fa;">${trial}</b><span>On Trial</span></div>
-                <div class="stat"><b style="color:#fbbf24;">${pending}</b><span>Awaiting Approval</span></div>
-            `;
-        }
+  const { data: profile, error } = await sb.from('profiles').select('is_super_admin').eq('id', session.user.id).single();
+  if (error || !profile || !profile.is_super_admin) {
+    document.getElementById('gate').style.display = 'block';
+    document.getElementById('gateMessage').innerHTML =
+      'This account isn\'t flagged as a super admin, so none of the admin functions will return data. ' +
+      'In the Supabase SQL editor, run:<br><br><code>update public.profiles set is_super_admin = true where email = \'' +
+      (session.user.email || 'YOUR-EMAIL') + '\';</code><br><br>then reload this page.';
+    return;
+  }
 
-        function renderTable() {
-            const wrap = document.getElementById('clientTableWrap');
-            if (clients.length === 0) { wrap.innerHTML = '<div class="empty">No clients have registered yet.</div>'; return; }
+  document.getElementById('app').style.display = 'block';
+  loadPending();
+  loadClients();
+  loadPlans();
+}
 
-            wrap.innerHTML = `
-                <table>
-                    <thead><tr><th>Business</th><th>Plan</th><th>Status</th><th>Period End</th><th>Signed Up</th><th>Actions</th></tr></thead>
-                    <tbody>
-                        ${clients.map(c => `
-                            <tr>
-                                <td><b>${c.business_name || '—'}</b><br><span style="color:var(--dim); font-size:11.5px;">${c.email || ''}</span></td>
-                                <td>${c.plan_name || '—'}</td>
-                                <td>
-                                    <span class="pill ${c.subscription_status}">${c.subscription_status}</span>
-                                    ${c.pending_payment_id ? `<br><span class="pill pending" style="margin-top:4px; display:inline-block;">₱${Number(c.pending_amount).toLocaleString()} pending</span>` : ''}
-                                </td>
-                                <td>${fmtDate(c.current_period_end)}</td>
-                                <td>${fmtDate(c.created_at)}</td>
-                                <td>
-                                    <div class="row-actions">
-                                        ${c.pending_payment_id ? `
-                                            <button class="primary" onclick="approvePayment('${c.pending_payment_id}')">Approve</button>
-                                            <button onclick="rejectPayment('${c.pending_payment_id}')">Reject</button>
-                                        ` : `
-                                            <button class="primary" onclick="openPayModal('${c.id}')">Record Payment</button>
-                                        `}
-                                        <button onclick="openStatusModal('${c.id}', '${c.subscription_status}')">Change Status</button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-        }
+document.getElementById('logoutBtn').onclick = async () => {
+  await sb.auth.signOut();
+  window.location.href = 'index.html';
+};
 
-        window.approvePayment = async function (paymentId) {
-            const { error } = await supabaseClient.rpc('admin_approve_payment', { p_payment_id: paymentId });
-            if (error) { alert('Could not approve: ' + error.message); return; }
-            await loadClients();
-        };
+/* ---------------- Pending subscriptions ---------------- */
 
-        window.rejectPayment = async function (paymentId) {
-            const reason = prompt('Reason for rejecting (optional):') || null;
-            const { error } = await supabaseClient.rpc('admin_reject_payment', { p_payment_id: paymentId, p_reason: reason });
-            if (error) { alert('Could not reject: ' + error.message); return; }
-            await loadClients();
-        };
+async function loadPending() {
+  const listEl = document.getElementById('pendingList');
+  listEl.innerHTML = '<div class="skeleton">Loading…</div>';
+  const { data, error } = await sb.rpc('admin_list_clients');
+  if (error) { listEl.innerHTML = `<div class="empty">Couldn't load: ${error.message}</div>`; return; }
 
-        window.openPayModal = function (id) {
-            activePayId = id;
-            const c = clients.find(x => x.id === id);
-            document.getElementById('payClientName').textContent = c ? `${c.business_name} (${c.email})` : '';
-            document.getElementById('payAmount').value = c && c.plan_slug === '3mo' ? '399' : (c && c.plan_slug === '6mo' ? '599' : '');
-            document.getElementById('payReference').value = '';
-            document.getElementById('payModalBg').classList.add('show');
-        };
+  const pending = (data || []).filter(c => c.pending_payment_id);
+  const badge = document.getElementById('pendingCount');
+  if (pending.length) { badge.style.display = 'inline-flex'; badge.textContent = pending.length; }
+  else { badge.style.display = 'none'; }
 
-        window.openStatusModal = function (id, currentStatus) {
-            activeStatusId = id;
-            const c = clients.find(x => x.id === id);
-            document.getElementById('statusClientName').textContent = c ? `${c.business_name} (${c.email})` : '';
-            document.getElementById('statusSelect').value = currentStatus;
-            document.getElementById('statusModalBg').classList.add('show');
-        };
+  if (!pending.length) {
+    listEl.innerHTML = '<div class="empty">No pending payment claims right now.</div>';
+    return;
+  }
 
-        document.getElementById('payCancel').addEventListener('click', () => document.getElementById('payModalBg').classList.remove('show'));
-        document.getElementById('statusCancel').addEventListener('click', () => document.getElementById('statusModalBg').classList.remove('show'));
+  listEl.innerHTML = '<div class="pending-list">' + pending.map(c => `
+    <div class="pending-card">
+      <div class="pending-info">
+        <div class="pending-biz">${esc(c.business_name)}</div>
+        <div class="pending-meta">${esc(c.email || '')} · ${esc(c.pending_plan_name || 'Plan')}</div>
+      </div>
+      <div class="pending-amount">${money(c.pending_amount)}</div>
+      <div class="pending-actions">
+        <button class="btn btn-sm" style="border-color:var(--green); color:var(--green);" onclick="approvePayment('${c.pending_payment_id}')">Approve</button>
+        <button class="btn btn-sm btn-danger" onclick="rejectPayment('${c.pending_payment_id}')">Reject</button>
+      </div>
+    </div>
+  `).join('') + '</div>';
+}
 
-        document.getElementById('payConfirm').addEventListener('click', async () => {
-            const amount = parseFloat(document.getElementById('payAmount').value) || 0;
-            const method = document.getElementById('payMethod').value;
-            const reference = document.getElementById('payReference').value.trim() || null;
-            const { error } = await supabaseClient.rpc('admin_record_payment', {
-                p_profile: activePayId, p_amount: amount, p_method: method, p_reference: reference
-            });
-            document.getElementById('payModalBg').classList.remove('show');
-            if (error) { alert('Could not record payment: ' + error.message); return; }
-            await loadClients();
-        });
+async function approvePayment(id) {
+  const { error } = await sb.rpc('admin_approve_payment', { p_payment_id: id });
+  if (error) { alert('Could not approve: ' + error.message); return; }
+  loadPending(); loadClients();
+}
 
-        document.getElementById('statusConfirm').addEventListener('click', async () => {
-            const status = document.getElementById('statusSelect').value;
-            const { error } = await supabaseClient.rpc('admin_set_subscription_status', {
-                p_profile: activeStatusId, p_status: status
-            });
-            document.getElementById('statusModalBg').classList.remove('show');
-            if (error) { alert('Could not change status: ' + error.message); return; }
-            await loadClients();
-        });
+function rejectPayment(id) {
+  confirmAction('Reject this payment?', 'The client will need to submit a new claim.', async () => {
+    const { error } = await sb.rpc('admin_reject_payment', { p_payment_id: id });
+    if (error) { alert('Could not reject: ' + error.message); return; }
+    loadPending(); loadClients();
+  });
+}
 
-        document.getElementById('gateBtn').addEventListener('click', tryLogin);
-        document.getElementById('gatePassword').addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
-        document.getElementById('refreshBtn').addEventListener('click', loadClients);
-        document.getElementById('logoutBtn').addEventListener('click', async () => {
-            await supabaseClient.auth.signOut();
-            location.reload();
-        });
+/* ---------------- Clients & subscriptions ---------------- */
 
-        (async function init() {
-            if (!supabaseClient) {
-                showGateError('Not connected to Supabase — check supabase-config.js.');
-                return;
-            }
-            await checkAdminAccess();
-        })();
-    </script>
+async function loadClients() {
+  const { data, error } = await sb.rpc('admin_list_clients');
+  const body = document.getElementById('clientsBody');
+  if (error) { body.innerHTML = `<tr><td colspan="5" class="empty">Couldn't load: ${error.message}</td></tr>`; return; }
+  clientsCache = data || [];
+  populatePlanFilter();
+  renderClients();
+}
+
+function populatePlanFilter() {
+  const sel = document.getElementById('planFilter');
+  const current = sel.value;
+  const names = [...new Set(clientsCache.map(c => c.plan_name).filter(Boolean))];
+  sel.innerHTML = '<option value="">All plans</option>' + names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  sel.value = current;
+}
+
+function renderClients() {
+  const body = document.getElementById('clientsBody');
+  const q = document.getElementById('clientSearch').value.trim().toLowerCase();
+  const status = document.getElementById('statusFilter').value;
+  const plan = document.getElementById('planFilter').value;
+
+  const rows = clientsCache.filter(c => {
+    if (status && c.subscription_status !== status) return false;
+    if (plan && c.plan_name !== plan) return false;
+    if (q && !(`${c.business_name} ${c.email}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+
+  if (!rows.length) { body.innerHTML = '<tr><td colspan="5" class="empty">No clients match this filter.</td></tr>'; return; }
+
+  body.innerHTML = rows.map(c => {
+    const daysLeft = c.current_period_end ? Math.ceil((new Date(c.current_period_end) - new Date()) / 86400000) : null;
+    let periodClass = '';
+    if (daysLeft !== null && daysLeft < 0) periodClass = 'expired';
+    else if (daysLeft !== null && daysLeft <= 5) periodClass = 'warn';
+
+    return `
+    <tr>
+      <td class="biz-cell">
+        <div class="name">${esc(c.business_name)}</div>
+        <div class="email">${esc(c.email || '')}</div>
+      </td>
+      <td>
+        <select class="mini-select" onchange="setPlan('${c.id}', this.value)">
+          <option value="">—</option>
+          ${plansCache.map(p => `<option value="${p.id}" ${p.id === c.plan_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+        </select>
+      </td>
+      <td>
+        <select class="mini-select" onchange="setStatus('${c.id}', this.value)">
+          ${['never','trial','active','overdue','cancelled'].map(s => `<option value="${s}" ${s === c.subscription_status ? 'selected' : ''}>${cap(s)}</option>`).join('')}
+        </select>
+      </td>
+      <td><span class="period-end ${periodClass}">${fmtDate(c.current_period_end)}</span></td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-sm" onclick="promptExtend('${c.id}')">Extend</button>
+          <button class="btn btn-sm" onclick="promptRecordPayment('${c.id}', '${esc(c.business_name)}')">Log payment</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function setStatus(profileId, status) {
+  const { error } = await sb.rpc('admin_set_subscription_status', { p_profile: profileId, p_status: status });
+  if (error) { alert('Could not update status: ' + error.message); loadClients(); return; }
+  const c = clientsCache.find(x => x.id === profileId);
+  if (c) c.subscription_status = status;
+}
+
+async function setPlan(profileId, planId) {
+  if (!planId) return;
+  const { error } = await sb.rpc('admin_set_plan', { p_profile: profileId, p_plan_id: planId });
+  if (error) { alert('Could not change plan: ' + error.message); }
+  loadClients();
+}
+
+function promptExtend(profileId) {
+  const days = prompt('Extend this client\'s subscription by how many days?', '30');
+  if (days === null) return;
+  const n = parseInt(days, 10);
+  if (!n || n <= 0) { alert('Enter a positive number of days.'); return; }
+  extendPeriod(profileId, n);
+}
+
+async function extendPeriod(profileId, days) {
+  const { error } = await sb.rpc('admin_extend_period', { p_profile: profileId, p_days: days });
+  if (error) { alert('Could not extend: ' + error.message); return; }
+  loadClients();
+}
+
+function promptRecordPayment(profileId, bizName) {
+  const amount = prompt(`Amount received from ${bizName} (PHP)?`);
+  if (amount === null) return;
+  const n = parseFloat(amount);
+  if (isNaN(n) || n < 0) { alert('Enter a valid amount.'); return; }
+  const method = prompt('Method: gcash, maya, bank, or other?', 'gcash');
+  if (!method || !['gcash','maya','bank','other'].includes(method.trim().toLowerCase())) { alert('Method must be gcash, maya, bank, or other.'); return; }
+  const reference = prompt('Reference number (optional):') || null;
+  recordPayment(profileId, n, method.trim().toLowerCase(), reference);
+}
+
+async function recordPayment(profileId, amount, method, reference) {
+  const { error } = await sb.rpc('admin_record_payment', { p_profile: profileId, p_amount: amount, p_method: method, p_reference: reference });
+  if (error) { alert('Could not record payment: ' + error.message); return; }
+  loadClients();
+}
+
+/* ---------------- Plans ---------------- */
+
+async function loadPlans() {
+  const grid = document.getElementById('plansGrid');
+  const { data, error } = await sb.rpc('admin_list_plans');
+  if (error) { grid.innerHTML = `<div class="empty">Couldn't load plans: ${error.message}</div>`; return; }
+  plansCache = data || [];
+  renderPlans();
+  renderClients(); // plan dropdowns depend on plansCache
+}
+
+function renderPlans() {
+  const grid = document.getElementById('plansGrid');
+  grid.innerHTML = plansCache.map(p => `
+    <div class="plan-card ${p.active ? '' : 'inactive'}">
+      <div class="plan-name">${esc(p.name)}</div>
+      <div class="plan-price">${p.price > 0 ? money(p.price, p.currency) : 'Free'} ${p.price > 0 ? `<small>/ ${p.duration_days}d</small>` : ''}</div>
+      <div class="plan-duration">${p.duration_days} day${p.duration_days === 1 ? '' : 's'} · ${p.active ? 'Active' : 'Hidden from pricing page'}</div>
+      <ul>${(p.features || []).slice(0,4).map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+      <div class="plan-foot">
+        <span class="subscriber-count">${p.subscriber_count} subscriber${p.subscriber_count === 1 ? '' : 's'}</span>
+        <div class="row-actions">
+          <button class="btn btn-sm" onclick='openPlanModal(${JSON.stringify(p).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm ${p.active ? 'btn-danger' : ''}" onclick="togglePlanActive('${p.id}', ${!p.active})">${p.active ? 'Hide' : 'Unhide'}</button>
+        </div>
+      </div>
+    </div>
+  `).join('') + `<div class="new-plan-card" onclick="openPlanModal()">+ New plan</div>`;
+}
+
+async function togglePlanActive(id, active) {
+  const { error } = await sb.rpc('admin_set_plan_active', { p_id: id, p_active: active });
+  if (error) { alert('Could not update: ' + error.message); return; }
+  loadPlans();
+}
+
+let editingPlanId = null;
+
+function openPlanModal(plan) {
+  editingPlanId = plan ? plan.id : null;
+  document.getElementById('planModalTitle').textContent = plan ? 'Edit plan' : 'New plan';
+  document.getElementById('planModalError').style.display = 'none';
+  document.getElementById('planName').value = plan ? plan.name : '';
+  document.getElementById('planSlug').value = plan ? plan.slug : '';
+  document.getElementById('planSlug').disabled = !!plan;
+  document.getElementById('planSlugField').style.display = plan ? 'none' : 'block';
+  document.getElementById('planPrice').value = plan ? plan.price : '';
+  document.getElementById('planDuration').value = plan ? plan.duration_days : '';
+  document.getElementById('planFeatures').value = plan ? (plan.features || []).join('\n') : '';
+  document.getElementById('planSortOrder').value = plan ? plan.sort_order : 0;
+  document.getElementById('planModalOverlay').classList.add('open');
+}
+
+function closePlanModal() {
+  document.getElementById('planModalOverlay').classList.remove('open');
+}
+
+async function savePlan() {
+  const name = document.getElementById('planName').value.trim();
+  const slug = document.getElementById('planSlug').value.trim();
+  const price = parseFloat(document.getElementById('planPrice').value);
+  const duration = parseInt(document.getElementById('planDuration').value, 10);
+  const features = document.getElementById('planFeatures').value.split('\n').map(f => f.trim()).filter(Boolean);
+  const sortOrder = parseInt(document.getElementById('planSortOrder').value, 10) || 0;
+  const errEl = document.getElementById('planModalError');
+
+  if (!name || isNaN(price) || price < 0 || !duration || duration <= 0) {
+    errEl.textContent = 'Name, a non-negative price, and a duration of at least 1 day are required.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const btn = document.getElementById('planSaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  let error;
+  if (editingPlanId) {
+    ({ error } = await sb.rpc('admin_update_plan', {
+      p_id: editingPlanId, p_name: name, p_price: price, p_duration_days: duration,
+      p_features: features, p_currency: 'PHP', p_sort_order: sortOrder
+    }));
+  } else {
+    if (!slug) {
+      errEl.textContent = 'Slug is required for a new plan.';
+      errEl.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Save plan';
+      return;
+    }
+    ({ error } = await sb.rpc('admin_create_plan', {
+      p_slug: slug, p_name: name, p_price: price, p_duration_days: duration,
+      p_features: features, p_currency: 'PHP', p_sort_order: sortOrder
+    }));
+  }
+
+  btn.disabled = false; btn.textContent = 'Save plan';
+
+  if (error) {
+    errEl.textContent = error.message;
+    errEl.style.display = 'block';
+    return;
+  }
+  closePlanModal();
+  loadPlans();
+}
+
+/* ---------------- shared helpers ---------------- */
+
+function confirmAction(title, body, onConfirm) {
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmBody').textContent = body;
+  const overlay = document.getElementById('confirmOverlay');
+  overlay.classList.add('open');
+  const okBtn = document.getElementById('confirmOkBtn');
+  okBtn.onclick = () => { overlay.classList.remove('open'); onConfirm(); };
+}
+function closeConfirm() { document.getElementById('confirmOverlay').classList.remove('open'); }
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+init();
+</script>
+
 </body>
 </html>
