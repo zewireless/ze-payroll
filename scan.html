@@ -153,6 +153,7 @@
 
 const params = new URLSearchParams(window.location.search);
 const employeeId = params.get('emp');
+const workspaceId = params.get('ws');
 
 let supabaseClient = null;
 if (window.supabase && typeof SUPABASE_URL !== 'undefined' && SUPABASE_URL && !SUPABASE_URL.includes('YOUR-PROJECT')) {
@@ -320,6 +321,7 @@ async function submitPunch() {
     setStatus('Checking...');
 
     const { data, error } = await supabaseClient.rpc('record_attendance_punch', {
+        p_workspace_id: workspaceId,
         p_employee_id: employeeId,
         p_pin: pin,
         p_lat: loc ? loc.lat : null,
@@ -369,7 +371,7 @@ async function init() {
         renderError('Not Configured', 'This scan page has not been connected to the attendance system yet. Please contact your administrator.');
         return;
     }
-    if (!employeeId) {
+    if (!employeeId || !workspaceId) {
         renderError('QR Code Not Recognized', 'Please scan your personal attendance QR code, or contact your administrator.');
         return;
     }
@@ -379,6 +381,7 @@ async function init() {
     const { data, error } = await supabaseClient
         .from('employees_kiosk_view')
         .select('first_name, last_name, status')
+        .eq('workspace_id', workspaceId)
         .eq('id', employeeId)
         .maybeSingle();
 

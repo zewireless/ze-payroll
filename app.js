@@ -16,6 +16,12 @@ const supabaseClient = (window.supabase && typeof SUPABASE_URL !== 'undefined' &
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
 
+// Every row an admin can see/write is scoped to their own account
+// (workspace_id = their auth user id - see supabase/migrations/
+// 011_multi_tenant_isolation.sql). Set the moment a session is
+// confirmed, before any data loads.
+let currentWorkspaceId = null;
+
 function requireSupabase() {
     if (!supabaseClient) {
         showToast('Not connected to Supabase - copy supabase-config.example.js to supabase-config.js and fill in your project details.', 'error');
@@ -34,6 +40,7 @@ async function checkAuth() {
     const savedUser = localStorage.getItem('payroll_username');
 
     if (session) {
+        currentWorkspaceId = session.user.id;
         document.getElementById('loginModal').classList.add('hidden');
         if (savedUser) document.getElementById('loginUsername').value = savedUser;
         await checkBillingThenEnter();
@@ -281,6 +288,10 @@ async function handleLogin() {
         localStorage.removeItem('payroll_remember_me');
         localStorage.removeItem('payroll_username');
     }
+
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    currentWorkspaceId = session ? session.user.id : null;
+
     document.getElementById('loginModal').classList.add('hidden');
     await checkBillingThenEnter();
 }
@@ -288,6 +299,7 @@ async function handleLogin() {
 async function logout() {
     if (supabaseClient) await supabaseClient.auth.signOut();
     teardownRealtimeSync();
+    currentWorkspaceId = null;
     document.getElementById('billingBlockedModal').classList.add('hidden');
     document.getElementById('loginModal').classList.remove('hidden');
 }
@@ -678,7 +690,7 @@ async function loadSettings() {
             const { data, error } = await supabaseClient
                 .from('app_config')
                 .select('settings, company')
-                .eq('id', 1)
+                .eq('workspace_id', currentWorkspaceId)
                 .maybeSingle();
             if (error) {
                 console.error('Failed to load settings from Supabase, using this device\'s local copy for now:', error);
@@ -786,10 +798,10 @@ async function loadSettings() {
 async function syncFullConfigToSupabase() {
     if (!supabaseClient) return;
     const { error } = await supabaseClient.from('app_config').upsert({
-        id: 1,
+        workspace_id: currentWorkspaceId,
         settings,
         company
-    }, { onConflict: 'id' });
+    }, { onConflict: 'workspace_id' });
     if (error) {
         console.error('Failed to sync settings to Supabase:', error);
         showToast('Saved on this device, but failed to sync to your other devices: ' + error.message, 'error');
@@ -927,7 +939,7 @@ async function syncAttendanceSettingsToSupabase() {
     const effectiveGeofenceEnabled = !!settings.geofenceEnabled && hasValidCoords;
 
     const { error } = await supabaseClient.from('payroll_settings').upsert({
-        id: 1,
+        workspace_id: currentWorkspaceId,
         schedule_am_in: settings.scheduleAmIn,
         schedule_am_out: settings.scheduleAmOut,
         schedule_pm_in: settings.schedulePmIn,
@@ -946,7 +958,7 @@ async function syncAttendanceSettingsToSupabase() {
         office_lat: hasValidCoords ? lat : null,
         office_lng: hasValidCoords ? lng : null,
         geofence_radius_m: settings.geofenceRadiusM || 50
-    }, { onConflict: 'id' });
+    }, { onConflict: 'workspace_id' });
 
     if (error) {
         console.error('Failed to sync attendance settings to Supabase:', error);
@@ -979,7 +991,7 @@ async function refreshGeofenceStatus() {
     const { data, error } = await supabaseClient
         .from('payroll_settings')
         .select('geofence_enabled, office_lat, office_lng, geofence_radius_m')
-        .eq('id', 1)
+        .eq('workspace_id', currentWorkspaceId)
         .maybeSingle();
 
     if (error || !data) {
@@ -1280,6 +1292,7 @@ function mapEmployeeFromDb(row) {
 function mapEmployeeToDb(emp) {
     return {
         id: emp.id,
+        workspace_id: currentWorkspaceId,
         first_name: emp.firstName,
         middle_name: emp.middleName,
         last_name: emp.lastName,
@@ -1529,7 +1542,7 @@ async function saveEmployee() {
 
     const { error } = await supabaseClient
         .from('employees')
-        .upsert(mapEmployeeToDb(employeeObj), { onConflict: 'id' });
+        .upsert(mapEmployeeToDb(employeeObj), { onConflict: 'workspace_id,id' });
 
     if (error) {
         showToast('Failed to save employee: ' + error.message, 'error');
@@ -1844,6 +1857,7 @@ async function saveDTR() {
 
     const row = {
         employee_id: employeeId,
+        workspace_id: currentWorkspaceId,
         date,
         time_in: timeIn || null,
         time_out: timeOut || null,
@@ -1860,7 +1874,7 @@ async function saveDTR() {
     // collides with an entry that came from a kiosk scan or paste import.
     const { error } = await supabaseClient
         .from('dtr_entries')
-        .upsert(row, { onConflict: 'employee_id,date' });
+        .upsert(row, { onConflict: 'workspace_id,employee_id,date' });
 
     if (error) {
         showToast('Failed to save DTR entry: ' + error.message, 'error');
@@ -2277,6 +2291,7 @@ async function importPasteDtrAttendance() {
 
             rowsToUpsert.push({
                 employee_id: employee.id,
+                workspace_id: currentWorkspaceId,
                 date: dateStr,
                 time_in: timeIn,
                 time_out: timeOut,
@@ -2296,7 +2311,7 @@ async function importPasteDtrAttendance() {
 
     const { error } = await supabaseClient
         .from('dtr_entries')
-        .upsert(rowsToUpsert, { onConflict: 'employee_id,date' });
+        .upsert(rowsToUpsert, { onConflict: 'workspace_id,employee_id,date' });
 
     if (error) {
         showToast('Import failed: ' + error.message, 'error');
@@ -3721,6 +3736,7 @@ async function processQRScan(employee) {
         const lateMinutes = existingDTR.lateMinutes || calculateLateMinutes(existingDTR.timeIn);
         row = {
             employee_id: employee.id,
+            workspace_id: currentWorkspaceId,
             date: dateStr,
             time_in: existingDTR.timeIn,
             time_out: timeStr,
@@ -3736,6 +3752,7 @@ async function processQRScan(employee) {
         const lateMinutes = calculateLateMinutes(timeStr);
         row = {
             employee_id: employee.id,
+            workspace_id: currentWorkspaceId,
             date: dateStr,
             time_in: timeStr,
             time_out: null,
@@ -3750,7 +3767,7 @@ async function processQRScan(employee) {
 
     const { error } = await supabaseClient
         .from('dtr_entries')
-        .upsert(row, { onConflict: 'employee_id,date' });
+        .upsert(row, { onConflict: 'workspace_id,employee_id,date' });
 
     if (error) {
         showToast('Failed to record scan: ' + error.message, 'error');
@@ -3785,7 +3802,10 @@ function scanAnother() {
 // so this has to be a real, reachable URL (works out of the box once
 // ze-payroll and scan.html are deployed at the same origin).
 function getKioskScanUrl(employeeId) {
-    const url = new URL(`scan.html?emp=${encodeURIComponent(employeeId)}`, window.location.href).toString();
+    // ws identifies which client's employee list the (anonymous, unauthenticated)
+    // kiosk page should look in - see supabase/migrations/011_multi_tenant_isolation.sql.
+    // Without it, scan.html has no way to know whose "EMP-2026-001" this is.
+    const url = new URL(`scan.html?emp=${encodeURIComponent(employeeId)}&ws=${encodeURIComponent(currentWorkspaceId || '')}`, window.location.href).toString();
 
     // If this app is opened as a local file (file:///Users/.../ze-payroll/app.html)
     // instead of being served from a real host, the URL above inherits that
@@ -4246,13 +4266,14 @@ function importData(input) {
             if (Array.isArray(data.employees) && data.employees.length > 0) {
                 const { error } = await supabaseClient
                     .from('employees')
-                    .upsert(data.employees.map(mapEmployeeToDb), { onConflict: 'id' });
+                    .upsert(data.employees.map(mapEmployeeToDb), { onConflict: 'workspace_id,id' });
                 if (error) showToast('Some employees failed to import: ' + error.message, 'error');
             }
 
             if (Array.isArray(data.dtr) && data.dtr.length > 0) {
                 const dtrRows = data.dtr.map(d => ({
                     employee_id: d.employeeId,
+                    workspace_id: currentWorkspaceId,
                     date: d.date,
                     time_in: d.timeIn || null,
                     time_out: d.timeOut || null,
@@ -4264,7 +4285,7 @@ function importData(input) {
                 }));
                 const { error } = await supabaseClient
                     .from('dtr_entries')
-                    .upsert(dtrRows, { onConflict: 'employee_id,date' });
+                    .upsert(dtrRows, { onConflict: 'workspace_id,employee_id,date' });
                 if (error) showToast('Some DTR entries failed to import: ' + error.message, 'error');
             }
 
