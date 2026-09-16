@@ -58,10 +58,11 @@
                     <span>Reports</span>
                 </a>
                 <!-- Only shown for accounts flagged is_super_admin in Supabase
-                     (see checkSuperAdminNav() in app.js and admin.html). Opens
-                     in a new tab since it's a separate mini-app, not a "page"
-                     inside this dashboard's SPA routing. -->
-                <a href="admin.html" class="nav-item hidden" id="adminNavLink" target="_blank" rel="noopener">
+                     (see checkSuperAdminNav() in app.js and admin.html).
+                     Renders inline as page-admin below (admin.html loaded in
+                     an iframe, so its own script/styles stay isolated from
+                     this SPA's) instead of opening a new tab. -->
+                <a href="#" class="nav-item hidden" id="adminNavLink" data-page="admin">
                     <i class="fas fa-user-shield"></i>
                     <span>Admin Panel</span>
                 </a>
@@ -806,6 +807,14 @@
                         <div id="reportContent" class="report-container"></div>
                     </div>
                 </div>
+            </div>
+
+            <!-- admin.html rendered inline via iframe so it keeps its own
+                 Supabase client/script scope instead of sharing this
+                 page's - avoids const redeclaration and ID collisions. -->
+            <div class="page" id="page-admin" style="height: calc(100vh - 140px);">
+                <iframe id="adminFrame" src="about:blank" data-src="admin.html"
+                    style="width:100%; height:100%; border:none; border-radius:12px; background:#0D1013;"></iframe>
             </div>
         </main>
     </div>

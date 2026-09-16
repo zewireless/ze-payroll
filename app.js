@@ -4143,7 +4143,8 @@ function navigateTo(page) {
         qr: ['QR Scanner', 'Scan employee QR codes for time tracking'],
         payroll: ['Payroll', 'Process and compute employee payroll'],
         settings: ['Settings', 'Configure payroll system settings'],
-        reports: ['Reports', 'Generate payroll reports']
+        reports: ['Reports', 'Generate payroll reports'],
+        admin: ['Admin Panel', 'Manage clients, plans and subscriptions']
     };
 
     const [title, subtitle] = titles[page] || ['Dashboard', ''];
@@ -4159,14 +4160,20 @@ function navigateTo(page) {
     // just because the admin went straight to Payroll.
     if (page === 'payroll') { populatePayrollPeriodOptions(); loadDTR().then(loadPayroll); }
     if (page === 'reports') generateReport();
+    // Lazy-load admin.html into its iframe only on first visit - keeps its
+    // Supabase client/auth check from running for every admin session,
+    // and it re-runs admin.html's own auth check fresh each time.
+    if (page === 'admin') {
+        const frame = document.getElementById('adminFrame');
+        if (frame && frame.src === 'about:blank') frame.src = frame.dataset.src;
+    }
 }
 
 document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', (e) => {
-        // adminNavLink is a real link (target="_blank" -> admin.html), not an
-        // in-app page - it has no data-page. Let it navigate normally instead
-        // of hijacking the click into navigateTo(undefined), which blanked
-        // the dashboard and stole the "active" highlight.
+        // Guard against any future .nav-item without data-page being
+        // swallowed into navigateTo(undefined) - that's what previously
+        // blanked the dashboard when adminNavLink was a plain external link.
         if (!item.dataset.page) return;
         e.preventDefault();
         navigateTo(item.dataset.page);
