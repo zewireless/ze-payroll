@@ -204,7 +204,7 @@
 <header>
   <div class="brand"><span class="mark">₱</span> ze-payroll admin</div>
   <div class="header-actions">
-    <a class="btn btn-ghost" href="app.html">Open payroll app</a>
+    <a class="btn btn-ghost" href="app.html" target="_top">Open payroll app</a>
     <button class="btn" id="logoutBtn">Log out</button>
   </div>
 </header>
@@ -345,7 +345,7 @@ const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-PH', { year: 'nume
 
 async function init() {
   const { data: { session } } = await sb.auth.getSession();
-  if (!session) { window.location.href = 'index.html'; return; }
+  if (!session) { window.top.location.href = 'index.html'; return; }
 
   const { data: profile, error } = await sb.from('profiles').select('is_super_admin').eq('id', session.user.id).single();
   if (error || !profile || !profile.is_super_admin) {
@@ -365,7 +365,7 @@ async function init() {
 
 document.getElementById('logoutBtn').onclick = async () => {
   await sb.auth.signOut();
-  window.location.href = 'index.html';
+  window.top.location.href = 'index.html';
 };
 
 /* ---------------- Pending subscriptions ---------------- */
