@@ -9,9 +9,9 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <!--
   Expects the same supabase-config.js used elsewhere in the app,
-  defining window.SUPABASE_URL and window.SUPABASE_ANON_KEY.
-  If your config.js exports different names, adjust the two lines
-  near the top of the <script> block below.
+  which declares top-level `const SUPABASE_URL` and
+  `const SUPABASE_ANON_KEY` (not window.SUPABASE_URL). This script
+  block below uses those two identifiers directly.
 -->
 <script src="supabase-config.js"></script>
 <style>
@@ -326,12 +326,14 @@
 
 <script>
 /* ---------------------------------------------------------------
-   Adjust these two if your supabase-config.js exports different
-   variable names.
+   supabase-config.js (loaded above) already declares SUPABASE_URL
+   and SUPABASE_ANON_KEY as top-level consts, so they're already in
+   scope here - redeclaring them with const/let throws "Identifier
+   has already been declared" and silently kills this entire script
+   (that's why the page looked blank: init() never ran). If your
+   config.js exports different names, just rename the two usages
+   below instead of re-declaring anything.
 --------------------------------------------------------------- */
-const SUPABASE_URL = window.SUPABASE_URL;
-const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY;
-
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let plansCache = [];
