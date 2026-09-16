@@ -4163,6 +4163,11 @@ function navigateTo(page) {
 
 document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', (e) => {
+        // adminNavLink is a real link (target="_blank" -> admin.html), not an
+        // in-app page - it has no data-page. Let it navigate normally instead
+        // of hijacking the click into navigateTo(undefined), which blanked
+        // the dashboard and stole the "active" highlight.
+        if (!item.dataset.page) return;
         e.preventDefault();
         navigateTo(item.dataset.page);
     });
