@@ -430,7 +430,7 @@ function teardownRealtimeSync() {
 // Data Storage
 // ============================================
 
-const STORAGE_KEYS = {
+const STORAGE_KEY_BASE = {
     SETTINGS: 'payroll_settings',
     EMPLOYEES: 'payroll_employees',
     DTR: 'payroll_dtr',
@@ -438,6 +438,24 @@ const STORAGE_KEYS = {
     COMPANY: 'payroll_company',
     PAYROLL_ADJUSTMENTS: 'payroll_adjustments'
 };
+
+// BUG THIS FIXES: localStorage is scoped to the browser, not the logged-in
+// account - so a client who registers on the same device/browser you used
+// to demo or test the app previously (or that a prior client used) was
+// falling back to whatever COMPANY/SETTINGS/PAYROLL data was last cached
+// there, e.g. your own real "ZE- Fiber Internet Services" info, even
+// though app_config in Supabase is correctly isolated per workspace_id
+// since migration 011. Namespacing every key by currentWorkspaceId means
+// switching accounts on one device can never surface another workspace's
+// cached data. Every existing STORAGE_KEYS.X read/write in this file
+// works unmodified since this Proxy just rewrites the key string.
+const STORAGE_KEYS = new Proxy(STORAGE_KEY_BASE, {
+    get(target, prop) {
+        const base = target[prop];
+        if (base === undefined) return undefined;
+        return currentWorkspaceId ? `${base}:${currentWorkspaceId}` : base;
+    }
+});
 
 // Default company settings
 const defaultCompany = {
