@@ -117,22 +117,23 @@ async function renderBillingGate(data, expired) {
     body.innerHTML = `<div id="planPickerList" style="text-align:left;">Loading plans…</div>`;
     document.getElementById('billingBlockedModal').classList.remove('hidden');
 
-    const { data: plans, error: plansError } = await supabaseClient
-        .from('plans')
-        .select('*')
-        .eq('active', true)
-        .order('sort_order');
+    const [{ data: plans, error: plansError }, { data: paymentSettings }] = await Promise.all([
+        supabaseClient.from('plans').select('*').eq('active', true).order('sort_order'),
+        supabaseClient.from('payment_settings').select('*')
+    ]);
 
     if (plansError || !plans || plans.length === 0) {
         document.getElementById('planPickerList').innerHTML = `<p style="color:var(--danger);">Could not load plans. Please contact support.</p>`;
         return;
     }
 
+    billingPaymentSettings = Object.fromEntries((paymentSettings || []).map(p => [p.method, p]));
     renderPlanPicker(plans, data);
 }
 
 let billingSelectedPlanId = null;
 let billingSelectedMethod = 'gcash';
+let billingPaymentSettings = {}; // method -> { account_name, account_number, note }, set in openPlanPicker()
 
 function renderPlanPicker(plans, billing) {
     const selectable = plans.filter(p => !(p.price == 0 && billing.trial_used));
@@ -159,9 +160,31 @@ function renderPlanPicker(plans, billing) {
     const selectedPlan = plans.find(p => p.id === billingSelectedPlanId);
     const isFree = selectedPlan && Number(selectedPlan.price) === 0;
 
-    const methodsHtml = ['gcash', 'maya', 'bank'].map(m => `
+    // Only offer a method the super-admin has actually configured (non-empty
+    // account name + number) - an unset method would leave the client with
+    // nothing to send payment to.
+    const availableMethods = ['gcash', 'maya', 'bank'].filter(m => {
+        const s = billingPaymentSettings[m];
+        return s && s.account_name && s.account_number;
+    });
+    if (!availableMethods.includes(billingSelectedMethod)) {
+        billingSelectedMethod = availableMethods[0] || 'gcash';
+    }
+
+    const methodsHtml = availableMethods.map(m => `
         <button type="button" class="btn ${m === billingSelectedMethod ? 'btn-primary' : 'btn-outline'} btn-sm pick-method-btn" data-method="${m}" style="text-transform:capitalize;">${m}</button>
     `).join(' ');
+
+    const activeSetting = billingPaymentSettings[billingSelectedMethod];
+    const paymentInstructions = availableMethods.length === 0
+        ? `<p style="font-size:11.5px; color:var(--danger); margin-bottom:10px;">
+               No payment method is set up yet — please contact support to activate a paid plan.
+           </p>`
+        : `<p style="font-size:11.5px; color:var(--gray-500); margin-bottom:10px;">
+               Send payment to <b>${escapeHtml(activeSetting.account_name)}</b>'s ${billingSelectedMethod.charAt(0).toUpperCase() + billingSelectedMethod.slice(1)}:
+               <b>${escapeHtml(activeSetting.account_number)}</b>${activeSetting.note ? ` (${escapeHtml(activeSetting.note)})` : ''}, then submit below.
+               We'll confirm and activate your plan within one business day.
+           </p>`;
 
     document.getElementById('planPickerList').innerHTML = `
         <div id="planCards">${cardsHtml}</div>
@@ -170,10 +193,7 @@ function renderPlanPicker(plans, billing) {
             <div style="display:flex; gap:6px; margin-bottom:10px;">${methodsHtml}</div>
             <input type="text" id="planPickerReference" placeholder="Reference # (optional, e.g. GCash ref)"
                 style="width:100%; padding:9px 11px; border-radius:8px; border:1px solid var(--gray-200); font-size:13px; margin-bottom:6px;">
-            <p style="font-size:11.5px; color:var(--gray-500); margin-bottom:10px;">
-                Send payment to <b>ev.lounel4195@gmail.com</b>'s GCash/Maya/bank (details on the pricing page), then submit below.
-                We'll confirm and activate your plan within one business day.
-            </p>
+            ${paymentInstructions}
         `}
         <button class="btn btn-primary" id="planPickerSubmit" style="width:100%;">
             ${isFree ? 'Start Free Trial' : 'Submit Payment'}

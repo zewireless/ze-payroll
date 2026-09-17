@@ -266,6 +266,16 @@
     <div class="plans-grid" id="plansGrid"><div class="skeleton">Loading…</div></div>
   </section>
 
+  <section id="paymentSettingsSection">
+    <div class="section-head">
+      <div>
+        <h2>Payment details</h2>
+        <div class="section-sub">Where clients send GCash / Maya / bank payments — shown in the plan picker</div>
+      </div>
+    </div>
+    <div class="plans-grid" id="paymentSettingsGrid"><div class="skeleton">Loading…</div></div>
+  </section>
+
 </main>
 
 <div class="gate" id="gate" style="display:none;">
@@ -308,6 +318,31 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closePlanModal()">Cancel</button>
       <button class="btn btn-primary" id="planSaveBtn" onclick="savePlan()">Save plan</button>
+    </div>
+  </div>
+</div>
+
+<!-- Payment method edit modal -->
+<div class="modal-overlay" id="paymentSettingModalOverlay">
+  <div class="modal">
+    <h3 id="paymentSettingModalTitle">Edit payment method</h3>
+    <div class="modal-sub">Shown to clients in the plan picker when they choose this method.</div>
+    <div class="modal-error" id="paymentSettingModalError"></div>
+    <div class="field">
+      <label>Account name</label>
+      <input type="text" id="paymentSettingAccountName" placeholder="e.g. Juan Dela Cruz">
+    </div>
+    <div class="field">
+      <label id="paymentSettingNumberLabel">Account / mobile number</label>
+      <input type="text" id="paymentSettingAccountNumber" placeholder="e.g. 0917 123 4567">
+    </div>
+    <div class="field">
+      <label>Note (optional — e.g. bank name &amp; branch)</label>
+      <input type="text" id="paymentSettingNote" placeholder="e.g. BDO, Cebu IT Park branch">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closePaymentSettingModal()">Cancel</button>
+      <button class="btn btn-primary" id="paymentSettingSaveBtn" onclick="savePaymentSetting()">Save</button>
     </div>
   </div>
 </div>
@@ -361,6 +396,7 @@ async function init() {
   loadPending();
   loadClients();
   loadPlans();
+  loadPaymentSettings();
   subscribeToPendingPayments();
 }
 
@@ -663,6 +699,93 @@ async function savePlan() {
   }
   closePlanModal();
   loadPlans();
+}
+
+/* ---------------- Payment details (GCash / Maya / bank) ---------------- */
+
+let paymentSettingsCache = [];
+
+async function loadPaymentSettings() {
+  const grid = document.getElementById('paymentSettingsGrid');
+  const { data, error } = await sb.from('payment_settings').select('*').order('method');
+  if (error) { grid.innerHTML = `<div class="empty">Couldn't load payment details: ${error.message}</div>`; return; }
+  paymentSettingsCache = data || [];
+  renderPaymentSettings();
+}
+
+function renderPaymentSettings() {
+  const grid = document.getElementById('paymentSettingsGrid');
+  const order = ['gcash', 'maya', 'bank'];
+  const byMethod = Object.fromEntries(paymentSettingsCache.map(p => [p.method, p]));
+
+  grid.innerHTML = order.map(method => {
+    const p = byMethod[method] || { method, account_name: '', account_number: '', note: null };
+    const unset = !p.account_name || !p.account_number;
+    return `
+      <div class="plan-card ${unset ? 'inactive' : ''}">
+        <div class="plan-name">${cap(method)}</div>
+        <div class="plan-price">${esc(p.account_number) || '<i>Not set</i>'}</div>
+        <div class="plan-duration">${esc(p.account_name) || 'No account name yet'}${p.note ? ' · ' + esc(p.note) : ''}</div>
+        <div class="plan-foot">
+          <span class="subscriber-count">${unset ? 'Clients see this method as unavailable' : 'Shown to clients'}</span>
+          <div class="row-actions">
+            <button class="btn btn-sm" onclick='openPaymentSettingModal(${JSON.stringify(p).replace(/'/g, "&#39;")})'>Edit</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+let editingPaymentMethod = null;
+
+function openPaymentSettingModal(p) {
+  editingPaymentMethod = p.method;
+  document.getElementById('paymentSettingModalTitle').textContent = `Edit ${cap(p.method)} details`;
+  document.getElementById('paymentSettingModalError').style.display = 'none';
+  document.getElementById('paymentSettingAccountName').value = p.account_name || '';
+  document.getElementById('paymentSettingAccountNumber').value = p.account_number || '';
+  document.getElementById('paymentSettingNote').value = p.note || '';
+  document.getElementById('paymentSettingNumberLabel').textContent =
+    p.method === 'bank' ? 'Account number' : 'Mobile number';
+  document.getElementById('paymentSettingModalOverlay').classList.add('open');
+}
+
+function closePaymentSettingModal() {
+  document.getElementById('paymentSettingModalOverlay').classList.remove('open');
+}
+
+async function savePaymentSetting() {
+  const accountName = document.getElementById('paymentSettingAccountName').value.trim();
+  const accountNumber = document.getElementById('paymentSettingAccountNumber').value.trim();
+  const note = document.getElementById('paymentSettingNote').value.trim() || null;
+  const errEl = document.getElementById('paymentSettingModalError');
+
+  if (!accountName || !accountNumber) {
+    errEl.textContent = 'Account name and number are both required — an incomplete method is hidden from clients.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const btn = document.getElementById('paymentSettingSaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  const { error } = await sb.rpc('admin_update_payment_settings', {
+    p_method: editingPaymentMethod,
+    p_account_name: accountName,
+    p_account_number: accountNumber,
+    p_note: note
+  });
+
+  btn.disabled = false; btn.textContent = 'Save';
+
+  if (error) {
+    errEl.textContent = error.message;
+    errEl.style.display = 'block';
+    return;
+  }
+  closePaymentSettingModal();
+  loadPaymentSettings();
 }
 
 /* ---------------- shared helpers ---------------- */
