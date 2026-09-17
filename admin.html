@@ -361,6 +361,38 @@ async function init() {
   loadPending();
   loadClients();
   loadPlans();
+  subscribeToPendingPayments();
+}
+
+/* ---------------- Realtime: live pending-subscription updates ----------------
+   Requires migrations/012_payments_admin_read.sql (RLS policy letting a
+   super-admin's own session see every row in `payments`, not just their
+   own) and the `payments` table added to the supabase_realtime
+   publication in the Supabase dashboard (Database -> Replication). */
+function subscribeToPendingPayments() {
+  sb.channel('admin-pending-payments')
+    .on('postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'payments', filter: 'status=eq.pending' },
+      () => { loadPending(); pulseBadge(); }
+    )
+    .on('postgres_changes',
+      // Covers a claim being approved/rejected/withdrawn from elsewhere
+      // (e.g. another admin tab, or the client cancelling their own claim)
+      // so this tab's list and badge never go stale.
+      { event: 'UPDATE', schema: 'public', table: 'payments' },
+      () => { loadPending(); loadClients(); }
+    )
+    .subscribe();
+}
+
+function pulseBadge() {
+  const badge = document.getElementById('pendingCount');
+  badge.style.transition = 'none';
+  badge.style.transform = 'scale(1.4)';
+  requestAnimationFrame(() => {
+    badge.style.transition = 'transform .3s ease';
+    badge.style.transform = 'scale(1)';
+  });
 }
 
 document.getElementById('logoutBtn').onclick = async () => {
