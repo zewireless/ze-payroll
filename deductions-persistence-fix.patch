@@ -1,0 +1,78 @@
+diff --git a/app.js b/app.js
+index 199296f..7f9ebcb 100644
+--- a/app.js
++++ b/app.js
+@@ -362,7 +362,20 @@ async function initializeApp() {
+     await loadDTR();
+     loadPayroll();
+     updateDashboard();
+-    document.getElementById('payrollMonthFilter').value = getTodayYearMonthStr();
++    // Restore whichever month/pay-period the admin was last viewing
++    // (see savePayrollFilterState() above) instead of always resetting
++    // to the current month - that reset was the cause of "my deductions
++    // disappeared on refresh": it hadn't actually been lost, the page
++    // was just showing a different cutoff than the one it was saved
++    // under. populatePayrollPeriodOptions() has already run inside
++    // loadSettings() above, so the period dropdown's options exist by
++    // this point and a saved period id can be applied safely.
++    const savedFilter = restorePayrollFilterState();
++    document.getElementById('payrollMonthFilter').value = savedFilter?.month || getTodayYearMonthStr();
++    const periodSel = document.getElementById('payrollPeriodFilter');
++    if (periodSel && savedFilter?.period && [...periodSel.options].some(o => o.value === savedFilter.period)) {
++        periodSel.value = savedFilter.period;
++    }
+     document.getElementById('reportMonth').value = getTodayYearMonthStr();
+     setDtrRangePreset('full-month');
+     initializeQRScanner();
+@@ -436,7 +449,8 @@ const STORAGE_KEY_BASE = {
+     DTR: 'payroll_dtr',
+     PAYROLL: 'payroll_processed',
+     COMPANY: 'payroll_company',
+-    PAYROLL_ADJUSTMENTS: 'payroll_adjustments'
++    PAYROLL_ADJUSTMENTS: 'payroll_adjustments',
++    PAYROLL_FILTER: 'payroll_filter'
+ };
+ 
+ // BUG THIS FIXES: localStorage is scoped to the browser, not the logged-in
+@@ -2761,6 +2775,32 @@ function populatePayrollPeriodOptions() {
+     }
+ }
+ 
++// BUG THIS FIXES: every full page refresh reset the Payroll page's
++// Month filter back to the current month (see initializeApp()), no
++// matter which month/cutoff the admin was actually working in. Since
++// deductions entered via the "Edit Deductions" modal are keyed by
++// employeeId|startDate|endDate (see getAdjustmentKey() below), landing
++// back on the wrong period after a refresh made deductions that were
++// genuinely saved for last month's cutoff look like they'd vanished -
++// they were still in localStorage, just filed under a period the page
++// was no longer showing. These two functions remember the last
++// month/period the admin had selected so a refresh returns to the
++// same view instead of silently jumping to "today".
++function savePayrollFilterState() {
++    const month = document.getElementById('payrollMonthFilter')?.value;
++    const period = document.getElementById('payrollPeriodFilter')?.value;
++    if (!month) return;
++    localStorage.setItem(STORAGE_KEYS.PAYROLL_FILTER, JSON.stringify({ month, period }));
++}
++
++function restorePayrollFilterState() {
++    try {
++        return JSON.parse(localStorage.getItem(STORAGE_KEYS.PAYROLL_FILTER) || 'null');
++    } catch {
++        return null;
++    }
++}
++
+ function loadPayroll() {
+     const employeeFilter = document.getElementById('payrollEmployeeFilter')?.value;
+     const monthFilter = document.getElementById('payrollMonthFilter')?.value;
+@@ -2768,6 +2808,8 @@ function loadPayroll() {
+ 
+     if (!monthFilter) return;
+ 
++    savePayrollFilterState();
++
+     const [year, month] = monthFilter.split('-').map(Number);
+     let startDate, endDate, payoutDate = null;
+ 
