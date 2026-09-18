@@ -347,6 +347,34 @@
   </div>
 </div>
 
+<!-- Payment history modal -->
+<div class="modal-overlay" id="paymentHistoryModalOverlay">
+  <div class="modal" style="max-width:560px;">
+    <h3 id="paymentHistoryTitle">Payment history</h3>
+    <div class="modal-sub" id="paymentHistorySub">Payments logged for this client.</div>
+    <div style="max-height:50vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px;">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="text-align:left; padding:8px 10px; font-size:12px; color:var(--text-muted); border-bottom:1px solid var(--border);">Date</th>
+            <th style="text-align:left; padding:8px 10px; font-size:12px; color:var(--text-muted); border-bottom:1px solid var(--border);">Amount</th>
+            <th style="text-align:left; padding:8px 10px; font-size:12px; color:var(--text-muted); border-bottom:1px solid var(--border);">Method</th>
+            <th style="text-align:left; padding:8px 10px; font-size:12px; color:var(--text-muted); border-bottom:1px solid var(--border);">Status</th>
+            <th style="text-align:left; padding:8px 10px; font-size:12px; color:var(--text-muted); border-bottom:1px solid var(--border);">Reference</th>
+            <th style="text-align:left; padding:8px 10px; font-size:12px; color:var(--text-muted); border-bottom:1px solid var(--border);">Plan</th>
+          </tr>
+        </thead>
+        <tbody id="paymentHistoryBody">
+          <tr><td colspan="6" class="empty" style="padding:16px 10px;">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closePaymentHistoryModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Generic confirm modal -->
 <div class="modal-overlay" id="confirmOverlay">
   <div class="modal" style="max-width:360px; text-align:center;">
@@ -545,6 +573,7 @@ function renderClients() {
         <div class="row-actions">
           <button class="btn btn-sm" onclick="promptExtend('${c.id}')">Extend</button>
           <button class="btn btn-sm" onclick="promptRecordPayment('${c.id}', '${esc(c.business_name)}')">Log payment</button>
+          <button class="btn btn-sm" onclick="openPaymentHistory('${c.id}', '${esc(c.business_name)}')">History</button>
         </div>
       </td>
     </tr>`;
@@ -594,6 +623,42 @@ async function recordPayment(profileId, amount, method, reference) {
   const { error } = await sb.rpc('admin_record_payment', { p_profile: profileId, p_amount: amount, p_method: method, p_reference: reference });
   if (error) { alert('Could not record payment: ' + error.message); return; }
   loadClients();
+}
+
+/* ---------------- Payment history ---------------- */
+
+async function openPaymentHistory(profileId, bizName) {
+  document.getElementById('paymentHistoryTitle').textContent = `Payment history — ${bizName}`;
+  document.getElementById('paymentHistoryBody').innerHTML =
+    '<tr><td colspan="6" class="empty" style="padding:16px 10px;">Loading…</td></tr>';
+  document.getElementById('paymentHistoryModalOverlay').classList.add('open');
+
+  const { data, error } = await sb.rpc('admin_list_payments', { p_profile: profileId });
+  const body = document.getElementById('paymentHistoryBody');
+
+  if (error) {
+    body.innerHTML = `<tr><td colspan="6" class="empty" style="padding:16px 10px;">Couldn't load history: ${esc(error.message)}</td></tr>`;
+    return;
+  }
+  if (!data || !data.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty" style="padding:16px 10px;">No payments logged yet.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = data.map(p => `
+    <tr>
+      <td style="padding:8px 10px; border-bottom:1px solid var(--border-soft);">${fmtDateTime(p.created_at)}</td>
+      <td style="padding:8px 10px; border-bottom:1px solid var(--border-soft);">${money(p.amount)}</td>
+      <td style="padding:8px 10px; border-bottom:1px solid var(--border-soft);">${cap(p.method || '—')}</td>
+      <td style="padding:8px 10px; border-bottom:1px solid var(--border-soft);">${cap(p.status || '—')}</td>
+      <td style="padding:8px 10px; border-bottom:1px solid var(--border-soft);">${esc(p.reference || '—')}</td>
+      <td style="padding:8px 10px; border-bottom:1px solid var(--border-soft);">${esc(p.plan_name || '—')}</td>
+    </tr>
+  `).join('');
+}
+
+function closePaymentHistoryModal() {
+  document.getElementById('paymentHistoryModalOverlay').classList.remove('open');
 }
 
 /* ---------------- Plans ---------------- */
