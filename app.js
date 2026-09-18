@@ -1357,6 +1357,10 @@ function mapEmployeeFromDb(row) {
         philhealthNumber: row.philhealth_number || '',
         pagibigNumber: row.pagibig_number || '',
         tin: row.tin || '',
+        paymentMethod: row.payment_method || 'cash',
+        paymentAccountName: row.payment_account_name || '',
+        paymentAccountNumber: row.payment_account_number || '',
+        paymentNote: row.payment_note || '',
         status: row.status || 'active',
         hasPin: !!row.pin_hash,
         createdAt: row.created_at
@@ -1383,6 +1387,10 @@ function mapEmployeeToDb(emp) {
         philhealth_number: emp.philhealthNumber,
         pagibig_number: emp.pagibigNumber,
         tin: emp.tin,
+        payment_method: emp.paymentMethod,
+        payment_account_name: emp.paymentAccountName,
+        payment_account_number: emp.paymentAccountNumber,
+        payment_note: emp.paymentNote,
         status: emp.status
     };
 }
@@ -1520,6 +1528,10 @@ async function addEmployee() {
     document.getElementById('philhealthNumber').value = '';
     document.getElementById('pagibigNumber').value = '';
     document.getElementById('tin').value = '';
+    document.getElementById('paymentMethod').value = 'cash';
+    document.getElementById('paymentAccountName').value = '';
+    document.getElementById('paymentAccountNumber').value = '';
+    document.getElementById('paymentNote').value = '';
     document.getElementById('employeeStatus').value = 'active';
     document.getElementById('employeePin').value = '';
     document.getElementById('employeePinHint').textContent = 'Used when this employee scans their attendance QR code on their own phone.';
@@ -1554,6 +1566,10 @@ function editEmployee(id) {
     document.getElementById('philhealthNumber').value = emp.philhealthNumber || '';
     document.getElementById('pagibigNumber').value = emp.pagibigNumber || '';
     document.getElementById('tin').value = emp.tin || '';
+    document.getElementById('paymentMethod').value = emp.paymentMethod || 'cash';
+    document.getElementById('paymentAccountName').value = emp.paymentAccountName || '';
+    document.getElementById('paymentAccountNumber').value = emp.paymentAccountNumber || '';
+    document.getElementById('paymentNote').value = emp.paymentNote || '';
     document.getElementById('employeeStatus').value = emp.status || 'active';
     document.getElementById('employeePin').value = '';
     document.getElementById('employeePinHint').textContent = emp.hasPin
@@ -1582,6 +1598,10 @@ async function saveEmployee() {
     const philhealthNumber = document.getElementById('philhealthNumber').value.trim();
     const pagibigNumber = document.getElementById('pagibigNumber').value.trim();
     const tin = document.getElementById('tin').value.trim();
+    const paymentMethod = document.getElementById('paymentMethod').value;
+    const paymentAccountName = document.getElementById('paymentAccountName').value.trim();
+    const paymentAccountNumber = document.getElementById('paymentAccountNumber').value.trim();
+    const paymentNote = document.getElementById('paymentNote').value.trim();
     const status = document.getElementById('employeeStatus').value;
     const pin = document.getElementById('employeePin').value.trim();
 
@@ -1611,7 +1631,8 @@ async function saveEmployee() {
     const employeeObj = {
         id: employeeId, firstName, middleName, lastName, position, department,
         email, phone, address, dailyRate, hourlyRate, baseDailyPay, hireDate,
-        sssNumber, philhealthNumber, pagibigNumber, tin, status
+        sssNumber, philhealthNumber, pagibigNumber, tin,
+        paymentMethod, paymentAccountName, paymentAccountNumber, paymentNote, status
     };
 
     const { error } = await supabaseClient
@@ -3442,6 +3463,53 @@ async function processPayroll() {
     const updated = [...filtered, ...payrollRecords];
     localStorage.setItem(STORAGE_KEYS.PAYROLL, JSON.stringify(updated));
 
+    // Also persist each employee's snapshot to Supabase (payroll_runs),
+    // so the employee-facing payslip portal (payslip.html) has
+    // something to show - localStorage above never leaves this
+    // browser/admin session. Best-effort: a failure here shouldn't
+    // block the admin from seeing payroll on screen, since it's
+    // still saved locally either way.
+    if (supabaseClient) {
+        let persistFailures = 0;
+        for (const record of payrollRecords) {
+            const emp = employees.find(e => e.id === record.employeeId);
+            const snapshot = {
+                ...record,
+                paymentDetails: emp ? {
+                    method: emp.paymentMethod || 'cash',
+                    accountName: emp.paymentAccountName || '',
+                    accountNumber: emp.paymentAccountNumber || '',
+                    note: emp.paymentNote || ''
+                } : null,
+                // The portal (payslip.html) is anonymous and has no
+                // access to this admin's app_config/payroll_settings,
+                // so a few display fields are baked into the snapshot
+                // at run time rather than looked up later.
+                company: {
+                    name: company.name || 'Company Name',
+                    address: company.address || '',
+                    tin: company.tin || ''
+                },
+                hideStatutoryOnPayslip: !!settings.hideStatutoryOnPayslip,
+                enableStatutoryDeductions: settings.enableStatutoryDeductions !== false
+            };
+            const { error: runError } = await supabaseClient.rpc('record_payroll_run', {
+                p_employee_id: record.employeeId,
+                p_period_start: startDate,
+                p_period_end: endDate,
+                p_payout_date: payoutDate || null,
+                p_snapshot: snapshot
+            });
+            if (runError) {
+                persistFailures++;
+                console.error('record_payroll_run RPC error:', runError);
+            }
+        }
+        if (persistFailures > 0) {
+            showToast(`${persistFailures} employee(s) could not be saved to the payslip portal - they'll still see it after the next successful run.`, 'error');
+        }
+    }
+
     showToast(
         payoutDate
             ? `Payroll processed for ${payrollRecords.length} employees! Payout date: ${formatDate(payoutDate)}.`
@@ -3483,6 +3551,16 @@ function generatePayslip(employeeId, startDate, endDate) {
                 <div><strong>Employee ID:</strong> ${emp.id}</div>
                 <div><strong>Position:</strong> ${emp.position}</div>
                 <div><strong>Pay Period:</strong> ${monthName}</div>
+            </div>
+
+            <!-- Payment Details -->
+            <div style="margin-bottom: 20px; padding: 10px 12px; background: #f8f9fa; border-radius: 4px; font-size: 12.5px;">
+                <strong>Payment Method:</strong> ${paymentMethodLabel(emp.paymentMethod)}
+                ${emp.paymentMethod !== 'cash' ? `
+                <br><strong>Account Name:</strong> ${emp.paymentAccountName || '-'}
+                <br><strong>Account / Mobile Number:</strong> ${emp.paymentAccountNumber || '-'}
+                ${emp.paymentNote ? `<br><strong>Note:</strong> ${emp.paymentNote}` : ''}
+                ` : ''}
             </div>
 
             <!-- Earnings -->
@@ -3958,15 +4036,40 @@ function printQRCodes() {
     window.print();
 }
 
+// Tracks which employee the QR modal is currently showing, so the
+// "Copy Portal Link" button (added alongside the kiosk QR) knows
+// who to build the link for without needing its own id parameter.
+let currentQrEmployeeId = null;
+
 function viewQREmployee(id) {
     const emp = employees.find(e => e.id === id);
     if (!emp) return;
 
+    currentQrEmployeeId = id;
     document.getElementById('qrEmployeeDisplayName').textContent = `${emp.firstName} ${emp.lastName} - ${emp.id}`;
     const qrDisplay = document.getElementById('qrCodeDisplay');
     qrDisplay.innerHTML = '';
     generateRealQRCode(getKioskScanUrl(emp.id), 'qrCodeDisplay');
     showModal('qrModal');
+}
+
+// Same idea as getKioskScanUrl(), but for the read-only, PIN-gated
+// payslip portal (payslip.html) instead of the attendance kiosk.
+function getPayslipPortalUrl(employeeId) {
+    return new URL(`payslip.html?emp=${encodeURIComponent(employeeId)}&ws=${encodeURIComponent(currentWorkspaceId || '')}`, window.location.href).toString();
+}
+
+async function copyPayslipPortalLink() {
+    if (!currentQrEmployeeId) return;
+    const url = getPayslipPortalUrl(currentQrEmployeeId);
+    try {
+        await navigator.clipboard.writeText(url);
+        showToast('Payslip portal link copied!', 'success');
+    } catch (err) {
+        // Clipboard API can be unavailable (e.g. non-HTTPS/non-localhost
+        // origin) - fall back to showing it so it can be copied by hand.
+        prompt('Copy this payslip portal link:', url);
+    }
 }
 
 // Rendered size of the QR itself (not counting quiet zone). 220px gives a much
@@ -4423,6 +4526,15 @@ function importData(input) {
 
 function formatNumber(num) {
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function paymentMethodLabel(method) {
+    switch (method) {
+        case 'bank': return 'Bank Transfer';
+        case 'gcash': return 'GCash';
+        case 'maya': return 'Maya';
+        default: return 'Cash';
+    }
 }
 
 function formatDate(dateStr) {

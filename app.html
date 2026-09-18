@@ -915,6 +915,31 @@
                         <input type="text" id="tin" class="form-control" placeholder="000-000-000-000">
                     </div>
                 </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Payment Method</label>
+                        <select id="paymentMethod" class="form-control">
+                            <option value="cash">Cash</option>
+                            <option value="bank">Bank Transfer</option>
+                            <option value="gcash">GCash</option>
+                            <option value="maya">Maya</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Account Name</label>
+                        <input type="text" id="paymentAccountName" class="form-control" placeholder="Name on the account">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Account / Mobile Number</label>
+                        <input type="text" id="paymentAccountNumber" class="form-control" placeholder="e.g. 09XX XXX XXXX or bank account no.">
+                    </div>
+                    <div class="form-group">
+                        <label>Payment Note</label>
+                        <input type="text" id="paymentNote" class="form-control" placeholder="e.g. bank name / branch (optional)">
+                    </div>
+                </div>
                 <div class="form-group">
                     <label>Status</label>
                     <select id="employeeStatus" class="form-control">
@@ -926,7 +951,7 @@
                 <div class="form-group">
                     <label>Attendance Kiosk PIN</label>
                     <input type="text" id="employeePin" class="form-control" placeholder="4-digit PIN, e.g. 1234" maxlength="4" inputmode="numeric" pattern="[0-9]{4}">
-                    <small class="text-muted" id="employeePinHint">Used when this employee scans their attendance QR code on their own phone. Leave blank to keep unchanged.</small>
+                    <small class="text-muted" id="employeePinHint">Used both to scan the attendance QR code and to log into the payslip portal. Leave blank to keep unchanged.</small>
                 </div>
             </div>
             <div class="modal-footer">
@@ -1112,6 +1137,12 @@
                 <button class="btn btn-sm btn-outline mt-2" onclick="printQRCodes()">
                     <i class="fas fa-print"></i> Print
                 </button>
+                <hr style="margin: 16px 0;">
+                <p class="text-muted" style="margin-bottom:6px;">Payslip Portal</p>
+                <button class="btn btn-sm btn-outline" onclick="copyPayslipPortalLink()">
+                    <i class="fas fa-link"></i> Copy Portal Link
+                </button>
+                <small class="text-muted" style="display:block; margin-top:6px;">Send this to the employee - they log in with the same PIN to view and download past payslips.</small>
             </div>
         </div>
     </div>
