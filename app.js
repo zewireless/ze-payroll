@@ -58,32 +58,100 @@ async function checkAuth() {
 }
 
 // Gate the dashboard behind the client's subscription (see
-// supabase/migrations/009_saas_billing.sql + 010_client_plan_selection.sql).
-// Fails OPEN (lets the admin in) if those migrations haven't been run
-// yet or the RPC call itself errors out - a billing check that can't
-// reach the server should never be what locks a paying admin out of
-// their own payroll.
+// supabase/migrations/009, 010 and 019_strict_billing.sql).
+//
+// STRICT MODE: this check FAILS CLOSED. If the server can't confirm an
+// active trial/subscription, the dashboard stays locked. The decision
+// comes from the server's own clock (check_my_access RPC) - never from
+// this device's clock - and the same rule is enforced in the database
+// by RLS (has_active_access()), so editing this JS in dev tools doesn't
+// unlock anyone's data.
+let appInitialized = false;
+let billingWatchTimer = null;
+
+async function fetchMyAccess() {
+    const { data, error } = await supabaseClient.rpc('check_my_access');
+    if (error) return { error };
+    return { data: data || {} };
+}
+
 async function checkBillingThenEnter() {
     document.getElementById('billingBlockedModal').classList.add('hidden');
 
-    const { data, error } = await supabaseClient.rpc('get_my_billing');
-    if (error || !data || Object.keys(data).length === 0) {
-        // Migrations not run yet, or this account predates them -
-        // behave exactly like before (no billing gate at all).
-        initializeApp();
+    const { data, error } = await fetchMyAccess();
+    if (error) {
+        renderBillingCheckFailed(error);
         return;
     }
 
-    const periodEnd = data.period_end ? new Date(data.period_end) : null;
-    const expired = periodEnd ? periodEnd.getTime() < Date.now() : false;
-    const hasAccess = (data.status === 'trial' || data.status === 'active') && !expired;
-
-    if (hasAccess) {
-        initializeApp();
+    if (data.has_access === true) {
+        if (!appInitialized) {
+            appInitialized = true;
+            initializeApp();
+        }
+        startBillingWatch();
         return;
     }
 
+    lockAppForBilling();
+    const serverNow = data.server_now ? new Date(data.server_now).getTime() : Date.now();
+    const periodEnd = data.period_end ? new Date(data.period_end).getTime() : null;
+    const expired = periodEnd !== null && periodEnd < serverNow;
     await renderBillingGate(data, expired);
+}
+
+// Re-checks access while the admin has the app open, so a trial that
+// ends mid-session locks the dashboard instead of staying usable until
+// the next login.
+let billingVisibilityBound = false;
+function startBillingWatch() {
+    if (billingWatchTimer) return;
+    const recheck = async () => {
+        if (!currentWorkspaceId || !supabaseClient) return;
+        const { data, error } = await fetchMyAccess();
+        if (error) return; // transient network error - the RLS still protects the data
+        if (data.has_access !== true) {
+            await checkBillingThenEnter();
+        }
+    };
+    billingWatchTimer = setInterval(recheck, 60 * 1000);
+    if (!billingVisibilityBound) {
+        billingVisibilityBound = true;
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && billingWatchTimer) recheck();
+        });
+    }
+}
+
+function stopBillingWatch() {
+    if (billingWatchTimer) clearInterval(billingWatchTimer);
+    billingWatchTimer = null;
+}
+
+// Stops live data and clears what's in memory so nothing stays usable
+// behind the paywall.
+function lockAppForBilling() {
+    stopBillingWatch();
+    teardownRealtimeSync();
+    employees = [];
+    dtrEntries = [];
+    payrollAdjustmentsCache = {};
+    appInitialized = false;
+}
+
+function renderBillingCheckFailed(error) {
+    const title = document.getElementById('billingBlockedTitle');
+    const sub = document.getElementById('billingBlockedSub');
+    const body = document.getElementById('billingBlockedBody');
+    title.textContent = "We couldn't verify your subscription";
+    sub.textContent = 'Check your internet connection and try again.';
+    console.error('Billing check failed:', error);
+    body.innerHTML = `
+        <p style="font-size:12.5px; color:var(--gray-500); margin-bottom:12px;">${escapeHtml(error.message || 'Unknown error')}</p>
+        <button class="btn btn-primary" id="billingRetryBtn" style="width:100%;">Try again</button>
+    `;
+    document.getElementById('billingBlockedModal').classList.remove('hidden');
+    document.getElementById('billingRetryBtn').addEventListener('click', checkBillingThenEnter);
 }
 
 // The paywall shown at login when an account has no active plan yet:
@@ -243,14 +311,9 @@ function renderPlanPicker(plans, billing) {
             return;
         }
 
-        if (result && result.activated) {
-            // Free trial - activated instantly, straight into the dashboard.
-            document.getElementById('billingBlockedModal').classList.add('hidden');
-            initializeApp();
-        } else {
-            // Paid plan - now sitting as a pending claim awaiting approval.
-            await checkBillingThenEnter();
-        }
+        // Free trial activates instantly; a paid plan becomes a pending
+        // claim. Either way, let the server decide what happens next.
+        await checkBillingThenEnter();
     });
 }
 
@@ -319,6 +382,9 @@ async function handleLogin() {
 async function logout() {
     if (supabaseClient) await supabaseClient.auth.signOut();
     teardownRealtimeSync();
+    stopBillingWatch();
+    appInitialized = false;
+    payrollAdjustmentsCache = {};
     currentWorkspaceId = null;
     document.getElementById('billingBlockedModal').classList.add('hidden');
     document.getElementById('loginModal').classList.remove('hidden');
@@ -360,6 +426,7 @@ async function initializeApp() {
     await loadSettings();
     await loadEmployees();
     await loadDTR();
+    await loadPayrollAdjustments();
     loadPayroll();
     updateDashboard();
     // Restore whichever month/pay-period the admin was last viewing
@@ -431,7 +498,17 @@ function setupRealtimeSync() {
         })
         .subscribe();
 
-    realtimeChannels = [dtrChannel, employeeChannel];
+    // Deductions edited on another device (e.g. the admin's phone) show
+    // up here live.
+    const adjustmentChannel = supabaseClient
+        .channel('payroll-adjustments-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'payroll_adjustments' }, async () => {
+            await loadPayrollAdjustments();
+            loadPayroll();
+        })
+        .subscribe();
+
+    realtimeChannels = [dtrChannel, employeeChannel, adjustmentChannel];
 }
 
 function teardownRealtimeSync() {
@@ -2976,7 +3053,14 @@ function getAdjustmentKey(employeeId, startDate, endDate) {
     return `${employeeId}|${startDate}|${endDate}`;
 }
 
-function loadAllPayrollAdjustments() {
+// In-memory copy of this workspace's deduction adjustments, filled from
+// Supabase (payroll_adjustments table, migration 018) so a deduction
+// edited on a phone shows up on the PC and vice versa. localStorage is
+// only an offline cache now - it used to be the ONLY copy, which is why
+// edits made on mobile never appeared in desktop Chrome.
+let payrollAdjustmentsCache = {};
+
+function readLocalAdjustments() {
     try {
         return JSON.parse(localStorage.getItem(STORAGE_KEYS.PAYROLL_ADJUSTMENTS) || '{}');
     } catch {
@@ -2984,14 +3068,82 @@ function loadAllPayrollAdjustments() {
     }
 }
 
-function getPayrollAdjustment(employeeId, startDate, endDate) {
-    const all = loadAllPayrollAdjustments();
-    const key = getAdjustmentKey(employeeId, startDate, endDate);
-    return all[key] || { sssOverride: null, philhealthOverride: null, pagibigOverride: null, otherDeductions: [] };
+function writeLocalAdjustments() {
+    localStorage.setItem(STORAGE_KEYS.PAYROLL_ADJUSTMENTS, JSON.stringify(payrollAdjustmentsCache));
 }
 
-function savePayrollAdjustment(employeeId, startDate, endDate, adjustment) {
-    const all = loadAllPayrollAdjustments();
+function loadAllPayrollAdjustments() {
+    return payrollAdjustmentsCache;
+}
+
+async function loadPayrollAdjustments() {
+    if (!supabaseClient || !currentWorkspaceId) {
+        payrollAdjustmentsCache = readLocalAdjustments();
+        return;
+    }
+
+    const { data, error } = await supabaseClient
+        .from('payroll_adjustments')
+        .select('employee_id, period_start, period_end, adjustment');
+
+    if (error) {
+        console.error('Failed to load deductions from Supabase (did you run 018_payroll_adjustments.sql?):', error);
+        payrollAdjustmentsCache = readLocalAdjustments();
+        showToast('Could not load deductions from the server: ' + error.message, 'error');
+        return;
+    }
+
+    const remote = {};
+    (data || []).forEach(r => {
+        remote[getAdjustmentKey(r.employee_id, r.period_start, r.period_end)] = r.adjustment;
+    });
+
+    // One-time upload per device: deductions saved before this fix only
+    // exist in this browser's localStorage. Push the ones the server
+    // doesn't have yet so they aren't stranded on this device.
+    const flagKey = `payroll_adjustments_uploaded:${currentWorkspaceId}`;
+    if (!localStorage.getItem(flagKey)) {
+        const rows = [];
+        Object.entries(readLocalAdjustments()).forEach(([key, adj]) => {
+            if (remote[key]) return;
+            const [employeeId, startDate, endDate] = key.split('|');
+            if (!employeeId || !startDate || !endDate) return;
+            // Skip deductions for employees that no longer exist (the table
+            // has a foreign key to employees, one bad row would fail the batch).
+            if (!employees.some(e => e.id === employeeId)) return;
+            rows.push({
+                workspace_id: currentWorkspaceId,
+                employee_id: employeeId,
+                period_start: startDate,
+                period_end: endDate,
+                adjustment: adj
+            });
+            remote[key] = adj;
+        });
+        if (rows.length === 0) {
+            localStorage.setItem(flagKey, '1');
+        } else {
+            const { error: upErr } = await supabaseClient
+                .from('payroll_adjustments')
+                .upsert(rows, { onConflict: 'workspace_id,employee_id,period_start,period_end' });
+            if (upErr) {
+                console.error('Could not upload local deductions:', upErr);
+            } else {
+                localStorage.setItem(flagKey, '1');
+            }
+        }
+    }
+
+    payrollAdjustmentsCache = remote;
+    writeLocalAdjustments();
+}
+
+function getPayrollAdjustment(employeeId, startDate, endDate) {
+    const key = getAdjustmentKey(employeeId, startDate, endDate);
+    return payrollAdjustmentsCache[key] || { sssOverride: null, philhealthOverride: null, pagibigOverride: null, otherDeductions: [] };
+}
+
+async function savePayrollAdjustment(employeeId, startDate, endDate, adjustment) {
     const key = getAdjustmentKey(employeeId, startDate, endDate);
 
     const isEmpty = (adjustment.sssOverride === null || adjustment.sssOverride === undefined) &&
@@ -2999,12 +3151,44 @@ function savePayrollAdjustment(employeeId, startDate, endDate, adjustment) {
         (adjustment.pagibigOverride === null || adjustment.pagibigOverride === undefined) &&
         (!adjustment.otherDeductions || adjustment.otherDeductions.length === 0);
 
+    // Update the screen immediately, then persist to the server.
     if (isEmpty) {
-        delete all[key];
+        delete payrollAdjustmentsCache[key];
     } else {
-        all[key] = adjustment;
+        payrollAdjustmentsCache[key] = adjustment;
     }
-    localStorage.setItem(STORAGE_KEYS.PAYROLL_ADJUSTMENTS, JSON.stringify(all));
+    writeLocalAdjustments();
+
+    if (!supabaseClient || !currentWorkspaceId) return true;
+
+    let error;
+    if (isEmpty) {
+        ({ error } = await supabaseClient
+            .from('payroll_adjustments')
+            .delete()
+            .eq('workspace_id', currentWorkspaceId)
+            .eq('employee_id', employeeId)
+            .eq('period_start', startDate)
+            .eq('period_end', endDate));
+    } else {
+        ({ error } = await supabaseClient
+            .from('payroll_adjustments')
+            .upsert({
+                workspace_id: currentWorkspaceId,
+                employee_id: employeeId,
+                period_start: startDate,
+                period_end: endDate,
+                adjustment,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'workspace_id,employee_id,period_start,period_end' }));
+    }
+
+    if (error) {
+        console.error('Failed to save deductions to Supabase:', error);
+        showToast('Saved on this device only - could not sync to your other devices: ' + error.message, 'error');
+        return false;
+    }
+    return true;
 }
 
 function computeEmployeePayroll(emp, dtrs, startDate, endDate) {
@@ -3378,7 +3562,7 @@ function removeOtherDeductionRow(index) {
     renderOtherDeductionsList();
 }
 
-function saveDeductionsAdjustment() {
+async function saveDeductionsAdjustment() {
     const employeeId = document.getElementById('deductionsEmployeeId').value;
     const startDate = document.getElementById('deductionsPeriodStart').value;
     const endDate = document.getElementById('deductionsPeriodEnd').value;
@@ -3398,10 +3582,10 @@ function saveDeductionsAdjustment() {
             .filter(d => d.label !== '' && d.amount !== 0)
     };
 
-    savePayrollAdjustment(employeeId, startDate, endDate, adjustment);
+    const synced = await savePayrollAdjustment(employeeId, startDate, endDate, adjustment);
     closeModal('payrollDeductionsModal');
     loadPayroll();
-    showToast('Deductions updated for this pay period.', 'success');
+    if (synced) showToast('Deductions updated for this pay period.', 'success');
 }
 
 async function processPayroll() {
@@ -3416,7 +3600,7 @@ async function processPayroll() {
     // this tab's `dtrEntries` was last populated (page load, or the last
     // realtime event) would be silently excluded from the computed payroll
     // even though they're already saved in the database.
-    await loadDTR();
+    await Promise.all([loadDTR(), loadPayrollAdjustments()]);
     loadPayroll();
 
     // loadPayroll() (just called above) already resolved the selected Pay
@@ -4390,9 +4574,15 @@ function closeModal(id) {
 }
 
 // Close modal on overlay click
+// The login and billing (paywall) modals can NOT be dismissed this way -
+// closing them used to reveal the dashboard behind an expired trial.
+const UNDISMISSABLE_MODALS = ['loginModal', 'billingBlockedModal'];
+
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
     overlay.addEventListener('click', (e) => {
-        closeModal(e.target.closest('.modal').id);
+        const modal = e.target.closest('.modal');
+        if (UNDISMISSABLE_MODALS.includes(modal.id)) return;
+        closeModal(modal.id);
     });
 });
 
@@ -4400,6 +4590,7 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         document.querySelectorAll('.modal:not(.hidden)').forEach(modal => {
+            if (UNDISMISSABLE_MODALS.includes(modal.id)) return;
             modal.classList.add('hidden');
         });
     }
